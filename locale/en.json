@@ -1,0 +1,70 @@
+{
+  "app": {
+    "title": "Side-AI",
+    "sidebar": {
+      "chat": "Chat",
+      "settings": "Settings"
+    }
+  },
+  "chat": {
+    "header": "AI Chat",
+    "placeholder": "Type your message...",
+    "send": "Send",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "systemMessage": "Chat history cleared. Start a new conversation."
+  },
+  "settings": {
+    "header": "Settings",
+    "sections": {
+      "ollama": {
+        "title": "Ollama Settings",
+        "url": {
+          "label": "Ollama URL",
+          "host": "Host",
+          "port": "Port",
+          "path": "Path"
+        },
+        "model": {
+          "label": "Ollama Model",
+          "loading": "Loading models...",
+          "empty": "No models found",
+          "error": "Error loading models",
+          "placeholder": "Please set Ollama URL first"
+        },
+        "proxy": "Use CORS proxy (try this if you get 403 errors)",
+        "streaming": "Enable streaming responses"
+      },
+      "appearance": {
+        "title": "Appearance",
+        "theme": {
+          "label": "Theme",
+          "light": "Light",
+          "dark": "Dark"
+        },
+        "language": {
+          "label": "Language"
+        }
+      }
+    },
+    "buttons": {
+      "save": "Save Settings",
+      "testConnection": "Test Connection",
+      "testApi": "Test API",
+      "refresh": "Refresh"
+    },
+    "status": {
+      "testing": "Testing connection...",
+      "success": "Connection successful! Ollama version: {version}",
+      "error": "Connection failed: {error}",
+      "apiTesting": "Testing API...",
+      "apiSuccess": "API test successful! Response: {response}",
+      "apiError": "API test failed: {error}",
+      "selectModel": "Please select a model first"
+    },
+    "notifications": {
+      "saved": "Settings saved successfully!",
+      "error": "Error saving settings: {error}"
+    }
+  }
+} 

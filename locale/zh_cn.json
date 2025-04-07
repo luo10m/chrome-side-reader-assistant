@@ -1,0 +1,70 @@
+{
+  "app": {
+    "title": "Side-AI",
+    "sidebar": {
+      "chat": "聊天",
+      "settings": "设置"
+    }
+  },
+  "chat": {
+    "header": "AI 聊天",
+    "placeholder": "输入您的消息...",
+    "send": "发送",
+    "copy": "复制",
+    "copied": "已复制!",
+    "systemMessage": "聊天历史已清除。开始新的对话。"
+  },
+  "settings": {
+    "header": "设置",
+    "sections": {
+      "ollama": {
+        "title": "Ollama 设置",
+        "url": {
+          "label": "Ollama URL",
+          "host": "主机",
+          "port": "端口",
+          "path": "路径"
+        },
+        "model": {
+          "label": "Ollama 模型",
+          "loading": "加载模型中...",
+          "empty": "未找到模型",
+          "error": "加载模型出错",
+          "placeholder": "请先设置 Ollama URL"
+        },
+        "proxy": "使用 CORS 代理（如果遇到 403 错误请尝试）",
+        "streaming": "启用流式响应"
+      },
+      "appearance": {
+        "title": "外观",
+        "theme": {
+          "label": "主题",
+          "light": "浅色",
+          "dark": "深色"
+        },
+        "language": {
+          "label": "语言"
+        }
+      }
+    },
+    "buttons": {
+      "save": "保存设置",
+      "testConnection": "测试连接",
+      "testApi": "测试 API",
+      "refresh": "刷新"
+    },
+    "status": {
+      "testing": "测试连接中...",
+      "success": "连接成功! Ollama 版本: {version}",
+      "error": "连接失败: {error}",
+      "apiTesting": "测试 API 中...",
+      "apiSuccess": "API 测试成功! 响应: {response}",
+      "apiError": "API 测试失败: {error}",
+      "selectModel": "请先选择一个模型"
+    },
+    "notifications": {
+      "saved": "设置保存成功!",
+      "error": "保存设置出错: {error}"
+    }
+  }
+} 
