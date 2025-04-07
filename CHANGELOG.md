@@ -17,6 +17,7 @@
 - Add retry logic to settings
 - Add default settings
 - Add reset settings button to side panel
+- Add Language : Japanese, Korean, French, German
 
 ## v1.0.0
 
