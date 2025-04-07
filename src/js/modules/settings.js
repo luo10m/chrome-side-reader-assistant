@@ -234,14 +234,14 @@ export async function loadSettings(container) {
     
     // Test connection
     testConnectionButton.addEventListener('click', async () => {
-        connectionStatus.textContent = 'Testing connection...';
+        connectionStatus.textContent = t('settings.status.testing');
         connectionStatus.className = 'connection-status testing';
         
         try {
-            // Use /api/version endpoint to test connection
-            let testUrl = ollamaHostInput.value.replace('/api/chat', '/api/version').replace('/api/generate', '/api/version');
+            // Build test URL
+            let testUrl = ollamaHostInput.value + ':' + ollamaPortInput.value;
             
-            // If URL doesn't include /api/version, add it
+            // Make sure URL ends with /api/version
             if (!testUrl.includes('/api/version')) {
                 testUrl = testUrl.replace(/\/$/, '') + '/api/version';
             }
@@ -257,7 +257,7 @@ export async function loadSettings(container) {
             
             if (response.ok) {
                 const data = await response.json();
-                connectionStatus.textContent = `Connection successful! Ollama version: ${data.version}`;
+                connectionStatus.textContent = t('settings.status.success', { version: data.version });
                 connectionStatus.className = 'connection-status success';
                 
                 // Save current selected model
@@ -265,18 +265,18 @@ export async function loadSettings(container) {
                 // Refresh model list
                 fetchModelList(ollamaHostInput.value + ':' + ollamaPortInput.value + ollamaPathInput.value, useProxyCheckbox.checked, currentModel);
             } else {
-                connectionStatus.textContent = `Connection failed: ${response.status} ${response.statusText}`;
+                connectionStatus.textContent = t('settings.status.error', { error: `${response.status} ${response.statusText}` });
                 connectionStatus.className = 'connection-status error';
             }
         } catch (error) {
-            connectionStatus.textContent = `Connection failed: ${error.message}`;
+            connectionStatus.textContent = t('settings.status.error', { error: error.message });
             connectionStatus.className = 'connection-status error';
         }
     });
     
     // Test API
     testApiButton.addEventListener('click', async () => {
-        connectionStatus.textContent = 'Testing API...';
+        connectionStatus.textContent = t('settings.status.apiTesting');
         connectionStatus.className = 'connection-status testing';
         
         try {
@@ -284,7 +284,7 @@ export async function loadSettings(container) {
             const model = ollamaModelSelect.value;
             
             if (!model) {
-                connectionStatus.textContent = 'Please select a model first';
+                connectionStatus.textContent = t('settings.status.selectModel');
                 connectionStatus.className = 'connection-status error';
                 return;
             }
@@ -308,15 +308,15 @@ export async function loadSettings(container) {
             
             if (response.ok) {
                 const data = await response.json();
-                connectionStatus.textContent = `API test successful! Response: ${data.response || JSON.stringify(data)}`;
+                connectionStatus.textContent = t('settings.status.apiSuccess', { response: data.response || JSON.stringify(data) });
                 connectionStatus.className = 'connection-status success';
             } else {
                 const errorText = await response.text();
-                connectionStatus.textContent = `API test failed: ${response.status} ${response.statusText} - ${errorText}`;
+                connectionStatus.textContent = t('settings.status.apiError', { error: `${response.status} ${response.statusText} - ${errorText}` });
                 connectionStatus.className = 'connection-status error';
             }
         } catch (error) {
-            connectionStatus.textContent = `API test failed: ${error.message}`;
+            connectionStatus.textContent = t('settings.status.apiError', { error: error.message });
             connectionStatus.className = 'connection-status error';
         }
     });

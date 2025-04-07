@@ -42,16 +42,30 @@ export function loadAIChat(container) {
         // Format message content with markdown
         contentElement.innerHTML = renderMarkdown(content);
         
+        // 手动初始化代码高亮，使用 try-catch 捕获可能的错误
+        if (typeof hljs !== 'undefined') {
+            try {
+                contentElement.querySelectorAll('pre code').forEach((block) => {
+                    try {
+                        // 确保代码内容被正确转义
+                        const originalContent = block.textContent;
+                        block.textContent = originalContent;
+                        
+                        hljs.highlightElement(block);
+                    } catch (e) {
+                        // 忽略单个代码块的高亮错误
+                        console.debug('Error highlighting individual code block:', e);
+                    }
+                });
+            } catch (e) {
+                // 忽略整体高亮错误
+                console.debug('Error during code highlighting:', e);
+            }
+        }
+        
         messageElement.appendChild(contentElement);
         
         chatMessages.appendChild(messageElement);
-        
-        // 手动初始化代码高亮
-        if (typeof hljs !== 'undefined') {
-            contentElement.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block);
-            });
-        }
         
         // Scroll to bottom
         chatMessages.scrollTop = chatMessages.scrollHeight;

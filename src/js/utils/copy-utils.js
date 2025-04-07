@@ -2,6 +2,8 @@
  * 代码复制工具
  */
 
+import { t } from './i18n.js';
+
 // 复制代码到剪贴板
 export function copyToClipboard(text, button) {
     // 处理特殊的换行符标记
@@ -11,7 +13,7 @@ export function copyToClipboard(text, button) {
     
     navigator.clipboard.writeText(processedText).then(() => {
         const originalText = button.textContent;
-        button.textContent = 'Copied!';
+        button.textContent = t('chat.copied');
         setTimeout(() => {
             button.textContent = originalText;
         }, 2000);
@@ -47,7 +49,7 @@ export function addCopyListeners() {
                 
                 navigator.clipboard.writeText(processedCode).then(() => {
                     const originalText = event.target.textContent;
-                    event.target.textContent = 'Copied!';
+                    event.target.textContent = t('chat.copied');
                     setTimeout(() => {
                         event.target.textContent = originalText;
                     }, 2000);
