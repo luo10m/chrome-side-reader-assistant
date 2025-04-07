@@ -6,81 +6,127 @@ export async function loadSettings(container) {
     // Get language options
     const languageOptions = await generateLanguageOptions();
     
-    // Create settings UI
+    // Create settings UI with tabs
     container.innerHTML = `
         <div class="settings-container">
             <div class="settings-header">
                 <h2 data-i18n="settings.header">Settings</h2>
             </div>
+            
+            <div class="settings-tabs">
+                <button class="tab-button active" data-tab="general" data-i18n="settings.tabs.general">General</button>
+                <button class="tab-button" data-tab="ollama" data-i18n="settings.tabs.ollama">Ollama</button>
+                <button class="tab-button" data-tab="system-prompt" data-i18n="settings.tabs.systemPrompt">System Prompt</button>
+            </div>
+            
             <div class="settings-content">
-                <div class="settings-section">
-                    <h3 data-i18n="settings.sections.ollama.title">Ollama Settings</h3>
-                    <div class="settings-item">
-                        <label data-i18n="settings.sections.ollama.url.label">Ollama URL</label>
-                        <div class="url-input-container">
-                            <div class="url-part">
-                                <label for="ollama-host" class="small-label" data-i18n="settings.sections.ollama.url.host">Host</label>
-                                <input type="text" id="ollama-host" placeholder="http://192.168.5.99">
-                            </div>
-                            <div class="url-part small">
-                                <label for="ollama-port" class="small-label" data-i18n="settings.sections.ollama.url.port">Port</label>
-                                <input type="text" id="ollama-port" placeholder="11434">
-                            </div>
-                            <div class="url-part">
-                                <label for="ollama-path" class="small-label" data-i18n="settings.sections.ollama.url.path">Path</label>
-                                <input type="text" id="ollama-path" placeholder="/api/generate">
-                            </div>
-                        </div>
-                    </div>
-                    <div class="settings-item">
-                        <label for="ollama-model" data-i18n="settings.sections.ollama.model.label">Ollama Model</label>
-                        <div class="model-select-container">
-                            <select id="ollama-model" disabled>
-                                <option value="" data-i18n="settings.sections.ollama.model.loading">Loading models...</option>
+                <!-- General Tab -->
+                <div class="tab-content active" id="general-tab">
+                    <div class="settings-section">
+                        <h3 data-i18n="settings.sections.appearance.title">Appearance</h3>
+                        <div class="settings-item">
+                            <label for="theme-select" data-i18n="settings.sections.appearance.theme.label">Theme</label>
+                            <select id="theme-select">
+                                <option value="light" data-i18n="settings.sections.appearance.theme.light">Light</option>
+                                <option value="dark" data-i18n="settings.sections.appearance.theme.dark">Dark</option>
                             </select>
-                            <button id="refresh-models" class="icon-button" data-i18n-title="settings.buttons.refresh">
-                                <img src="assets/svg/refresh.svg" alt="Refresh" class="button-icon">
-                            </button>
+                        </div>
+                        <div class="settings-item">
+                            <label for="language-select" data-i18n="settings.sections.appearance.language.label">Language</label>
+                            <select id="language-select">
+                                ${languageOptions}
+                            </select>
                         </div>
                     </div>
-                    <div class="settings-item">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="use-proxy">
-                            <span data-i18n="settings.sections.ollama.proxy">Use CORS proxy (try this if you get 403 errors)</span>
-                        </label>
-                    </div>
-                    <div class="settings-item">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="use-streaming" checked>
-                            <span data-i18n="settings.sections.ollama.streaming">Enable streaming responses</span>
-                        </label>
-                    </div>
-                    <button id="test-connection" class="settings-button" data-i18n="settings.buttons.testConnection">Test Connection</button>
-                    <button id="test-api" class="settings-button" data-i18n="settings.buttons.testApi">Test API</button>
-                    <div id="connection-status" class="connection-status"></div>
                 </div>
-                <div class="settings-section">
-                    <h3 data-i18n="settings.sections.appearance.title">Appearance</h3>
-                    <div class="settings-item">
-                        <label for="theme-select" data-i18n="settings.sections.appearance.theme.label">Theme</label>
-                        <select id="theme-select">
-                            <option value="light" data-i18n="settings.sections.appearance.theme.light">Light</option>
-                            <option value="dark" data-i18n="settings.sections.appearance.theme.dark">Dark</option>
-                        </select>
-                    </div>
-                    <div class="settings-item">
-                        <label for="language-select" data-i18n="settings.sections.appearance.language.label">Language</label>
-                        <select id="language-select">
-                            ${languageOptions}
-                        </select>
+                
+                <!-- Ollama Tab -->
+                <div class="tab-content" id="ollama-tab">
+                    <div class="settings-section">
+                        <h3 data-i18n="settings.sections.ollama.title">Ollama Settings</h3>
+                        <div class="settings-item">
+                            <label data-i18n="settings.sections.ollama.url.label">Ollama URL</label>
+                            <div class="url-input-container">
+                                <div class="url-part">
+                                    <label for="ollama-host" class="small-label" data-i18n="settings.sections.ollama.url.host">Host</label>
+                                    <input type="text" id="ollama-host" placeholder="http://192.168.5.99">
+                                </div>
+                                <div class="url-part small">
+                                    <label for="ollama-port" class="small-label" data-i18n="settings.sections.ollama.url.port">Port</label>
+                                    <input type="text" id="ollama-port" placeholder="11434">
+                                </div>
+                                <div class="url-part">
+                                    <label for="ollama-path" class="small-label" data-i18n="settings.sections.ollama.url.path">Path</label>
+                                    <input type="text" id="ollama-path" placeholder="/api/generate">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="settings-item">
+                            <label for="ollama-model" data-i18n="settings.sections.ollama.model.label">Ollama Model</label>
+                            <div class="model-select-container">
+                                <select id="ollama-model" disabled>
+                                    <option value="" data-i18n="settings.sections.ollama.model.loading">Loading models...</option>
+                                </select>
+                                <button id="refresh-models" class="icon-button" data-i18n-title="settings.buttons.refresh">
+                                    <img src="assets/svg/refresh.svg" alt="Refresh" class="button-icon">
+                                </button>
+                            </div>
+                        </div>
+                        <div class="settings-item">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="use-proxy">
+                                <span data-i18n="settings.sections.ollama.proxy">Use CORS proxy (try this if you get 403 errors)</span>
+                            </label>
+                        </div>
+                        <div class="settings-item">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="use-streaming" checked>
+                                <span data-i18n="settings.sections.ollama.streaming">Enable streaming responses</span>
+                            </label>
+                        </div>
+                        <button id="test-connection" class="settings-button" data-i18n="settings.buttons.testConnection">Test Connection</button>
+                        <button id="test-api" class="settings-button" data-i18n="settings.buttons.testApi">Test API</button>
+                        <div id="connection-status" class="connection-status"></div>
                     </div>
                 </div>
-                <div class="settings-actions">
-                    <button id="save-settings" class="settings-button primary" data-i18n="settings.buttons.save">Save Settings</button>
+                
+                <!-- System Prompt Tab -->
+                <div class="tab-content" id="system-prompt-tab">
+                    <div class="settings-section">
+                        <h3 data-i18n="settings.sections.systemPrompt.title">System Prompt</h3>
+                        <div class="settings-item">
+                            <label for="system-prompt" data-i18n="settings.sections.systemPrompt.label">System Prompt</label>
+                            <textarea id="system-prompt" rows="8" placeholder="Enter system prompt here..." data-i18n-placeholder="settings.sections.systemPrompt.placeholder"></textarea>
+                            <p class="settings-help" data-i18n="settings.sections.systemPrompt.help">
+                                The system prompt is sent to the AI at the beginning of each conversation to set the context and behavior.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
+        
+        <div class="settings-actions">
+            <button id="save-settings" class="settings-button primary" data-i18n="settings.buttons.save">Save Settings</button>
+        </div>
     `;
+    
+    // 添加选项卡切换功能
+    const tabButtons = container.querySelectorAll('.tab-button');
+    const tabContents = container.querySelectorAll('.tab-content');
+    
+    tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            // 移除所有选项卡的活动状态
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            tabContents.forEach(content => content.classList.remove('active'));
+            
+            // 激活当前选项卡
+            button.classList.add('active');
+            const tabId = button.getAttribute('data-tab');
+            document.getElementById(`${tabId}-tab`).classList.add('active');
+        });
+    });
     
     // Get DOM elements
     const ollamaHostInput = document.getElementById('ollama-host');
@@ -96,6 +142,7 @@ export async function loadSettings(container) {
     const useProxyCheckbox = document.getElementById('use-proxy');
     const testApiButton = document.getElementById('test-api');
     const useStreamingCheckbox = document.getElementById('use-streaming');
+    const systemPromptTextarea = document.getElementById('system-prompt');
     
     // Set current language
     languageSelect.value = getCurrentLanguage();
@@ -135,6 +182,9 @@ export async function loadSettings(container) {
         
         // Load model list
         fetchModelList(fullUrl, useProxyCheckbox.checked, settings.ollamaModel);
+        
+        // Set system prompt
+        systemPromptTextarea.value = settings.systemPrompt || '';
     });
     
     // When URL parts change, refresh model list
@@ -352,7 +402,8 @@ export async function loadSettings(container) {
             theme: themeSelect.value,
             language: languageSelect.value,
             useProxy: useProxyCheckbox.checked,
-            useStreaming: useStreamingCheckbox.checked
+            useStreaming: useStreamingCheckbox.checked,
+            systemPrompt: systemPromptTextarea.value,
         };
         
         try {

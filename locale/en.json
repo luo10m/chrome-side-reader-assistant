@@ -16,6 +16,11 @@
   },
   "settings": {
     "header": "Settings",
+    "tabs": {
+      "general": "General",
+      "ollama": "Ollama",
+      "systemPrompt": "System Prompt"
+    },
     "sections": {
       "ollama": {
         "title": "Ollama Settings",
@@ -45,6 +50,12 @@
         "language": {
           "label": "Language"
         }
+      },
+      "systemPrompt": {
+        "title": "System Prompt",
+        "label": "System Prompt",
+        "placeholder": "Enter system prompt here...",
+        "help": "The system prompt is sent to the AI at the beginning of each conversation to set the context and behavior."
       }
     },
     "buttons": {

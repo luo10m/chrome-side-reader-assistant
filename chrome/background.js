@@ -3,73 +3,78 @@ chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((error) => console.error(error));
 
-// Default settings
+// custom settings
 const defaultSettings = {
-  ollamaUrl: 'http://192.168.5.99:11434/api/generate',
-  ollamaModel: 'qwen2.5:7b',
-  theme: 'light',
-  useProxy: false,
-  useStreaming: true
+    ollamaUrl: 'http://192.168.5.99:11434/api/generate',
+    ollamaModel: 'qwen2.5:7b',
+    theme: 'light',
+    useProxy: false,
+    useStreaming: true,
+    systemPrompt: 'Act as an expert in [user topic]. Provide a detailed, clear, and helpful response to the following request: [user request or question]. Make sure your explanation is easy to understand and includes examples where relevant. You are a helpful assistant.'
 };
 
-// Current settings
+// current settings
 let currentSettings = { ...defaultSettings };
 
-// Load settings from storage
+// load settings
 function loadSettings() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['settings'], (result) => {
-      if (result.settings) {
-        currentSettings = { ...defaultSettings, ...result.settings };
-      }
-      resolve(currentSettings);
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['settings'], (result) => {
+            if (result.settings) {
+                // merge default settings and stored settings
+                currentSettings = { ...defaultSettings, ...result.settings };
+            }
+            resolve(currentSettings);
+        });
     });
-  });
 }
 
-// Save settings to storage
+// save settings
 function saveSettings(settings) {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ settings }, () => {
-      currentSettings = settings;
-      resolve();
+    return new Promise((resolve) => {
+        // ensure all required settings exist
+        const newSettings = { ...currentSettings, ...settings };
+        
+        chrome.storage.local.set({ settings: newSettings }, () => {
+            currentSettings = newSettings;
+            resolve(currentSettings);
+        });
     });
-  });
 }
 
-// Initialize settings
+// initialize settings
 loadSettings();
 
-// Listen for keyboard shortcuts
+// listen for keyboard shortcuts
 chrome.commands.onCommand.addListener((command) => {
     console.log(`Command received: ${command}`);
     if (command === "_execute_action") {
-        // 直接尝试打开侧边栏，不检查是否已打开
+        // try to open side panel without checking if it's already open
         chrome.sidePanel.open().catch((error) => {
             console.error("Error opening side panel:", error);
         });
     }
 });
 
-// Listen for messages from content script
+// listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'sendMessageToOllama') {
-        // 创建一个连接 ID，用于标识这个请求
+        // create a connection ID, for identifying this request
         const connectionId = Date.now().toString();
         
-        // 发送初始响应，包含连接 ID
+        // send initial response, including connection ID
         sendResponse({ streaming: true, connectionId });
         
-        // 设置一个监听器，等待从前端建立的连接
+        // set a listener, waiting for the connection from the front end
         const connectionListener = (port) => {
             if (port.name === `ollama-stream-${connectionId}`) {
-                // 移除监听器，避免内存泄漏
+                // remove the listener, to avoid memory leak
                 chrome.runtime.onConnect.removeListener(connectionListener);
                 
-                // 发送消息到 Ollama
-                sendMessageToOllama(request.message, request.history)
+                // send message to Ollama
+                sendMessageToOllama(request.message, request.history, request.systemPrompt)
                     .then(async ({ reader, decoder, fullResponse, model, streaming }) => {
-                        // 如果不是流式响应，直接发送完整响应并关闭连接
+                        // if not streaming, send the full response and close the connection
                         if (!streaming) {
                             port.postMessage({ 
                                 done: true, 
@@ -81,12 +86,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         }
                         
                         try {
-                            // 读取流式响应
+                            // read the streaming response
                             while (true) {
                                 const { done, value } = await reader.read();
                                 
                                 if (done) {
-                                    // 流结束，发送完整响应
+                                    // stream ended, send the full response
                                     port.postMessage({ 
                                         done: true, 
                                         content: fullResponse,
@@ -96,35 +101,43 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                                     break;
                                 }
                                 
-                                // 解码数据块
+                                // decode the data block
                                 const chunk = decoder.decode(value, { stream: true });
                                 
                                 try {
-                                    // 解析 JSON 行
+                                    // parse JSON lines
                                     const lines = chunk.split('\n').filter(line => line.trim() !== '');
                                     
                                     for (const line of lines) {
                                         try {
-                                            // 尝试解析每一行 JSON
+                                            // try to parse each JSON line
                                             const data = JSON.parse(line);
                                             
                                             if (data.response) {
-                                                // 添加到完整响应
+                                                // add to the full response
                                                 fullResponse += data.response;
                                                 
-                                                // 发送增量更新
+                                                // send incremental updates
                                                 port.postMessage({ 
                                                     done: false, 
                                                     content: data.response,
                                                     model: model
                                                 });
+                                            } else if (data.done) {
+                                                // handle the done signal
+                                                port.postMessage({
+                                                    done: true,
+                                                    content: fullResponse,
+                                                    model: model
+                                                });
                                             }
                                         } catch (jsonError) {
-                                            // 如果单行解析失败，记录错误但继续处理其他行
-                                            console.warn('Error parsing JSON line:', jsonError, line);
-                                            // 在处理不完整 JSON 的部分添加更多的匹配模式
+                                            // if single line parsing fails, record the error but continue processing other lines
+                                            console.warn('Error parsing JSON line:', jsonError);
+                                            
+                                            // handle incomplete JSON
                                             if (line.includes('"response":"')) {
-                                                // 尝试提取响应内容，即使 JSON 格式不完整
+                                                // try to extract the response content, even if the JSON is incomplete
                                                 const responseMatch = line.match(/"response":"([^"]*)"/);
                                                 if (responseMatch && responseMatch[1]) {
                                                     const response = responseMatch[1];
@@ -135,13 +148,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                                                         model: model
                                                     });
                                                 }
-                                            } else if (line.includes('"context":')) {
-                                                // 处理上下文信息，可能表示流的结束
+                                            } else if (line.includes('"done":true')) {
+                                                // handle the done signal, even if the JSON is incomplete
                                                 port.postMessage({
-                                                    done: false,
-                                                    content: "",
+                                                    done: true,
+                                                    content: fullResponse,
                                                     model: model
                                                 });
+                                            } else if (line.includes('"context":')) {
+                                                // handle the line containing context, this is usually the last line
+                                                // this line may cause parsing errors due to large arrays
+                                                // we can safely ignore it, because we don't need context data
+                                                console.log('Ignoring context data');
+                                                
+                                                // if this is the last line, it may mean the response is complete
+                                                if (!line.includes('"response":')) {
+                                                    port.postMessage({
+                                                        done: true,
+                                                        content: fullResponse,
+                                                        model: model
+                                                    });
+                                                }
                                             }
                                         }
                                     }
@@ -161,29 +188,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         port.disconnect();
                     });
                 
-                // 监听端口断开
+                // listen for port disconnection
                 port.onDisconnect.addListener(() => {
                     console.log('Port disconnected');
                 });
             }
         };
         
-        // 添加连接监听器
+        // add a connection listener
         chrome.runtime.onConnect.addListener(connectionListener);
         
-        // 设置超时，如果 5 秒内没有建立连接，则移除监听器
+        // set a timeout, if 5 seconds pass without a connection, remove the listener
         setTimeout(() => {
             chrome.runtime.onConnect.removeListener(connectionListener);
         }, 5000);
         
-        // 返回 true 表示将异步发送响应
+        // return true to indicate that the response will be sent asynchronously
         return true;
     } else if (request.action === 'getSettings') {
-        // 返回当前设置
+        // return the current settings
         sendResponse(currentSettings);
         return false;
     } else if (request.action === 'updateSettings') {
-        // 更新设置
+        // update settings
         saveSettings(request.settings)
             .then(() => {
                 sendResponse(currentSettings);
@@ -192,13 +219,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 sendResponse({ error: error.message });
             });
         
-        // 返回 true 表示将异步发送响应
+        // return true to indicate that the response will be sent asynchronously
         return true;
     }
 });
 
 // Send message to Ollama with streaming support
-async function sendMessageToOllama(message, history) {
+async function sendMessageToOllama(message, history, systemPrompt) {
     try {
         // Use settings for Ollama URL and model
         let ollamaUrl = currentSettings.ollamaUrl;
@@ -206,15 +233,22 @@ async function sendMessageToOllama(message, history) {
         const useProxy = currentSettings.useProxy;
         const useStreaming = currentSettings.useStreaming !== false; // 默认启用
         
-        // 如果启用了代理，使用 CORS 代理
+        // if proxy is enabled, use a CORS proxy
         if (useProxy) {
             ollamaUrl = `https://cors-anywhere.herokuapp.com/${ollamaUrl}`;
         }
         
         console.log(`Sending request to ${ollamaUrl} with model ${ollamaModel}`);
         
-        // 构建提示文本，包含历史消息
+        // build the prompt text, including history messages and system prompt
         let prompt = "";
+        
+        // add the system prompt (if any)
+        if (systemPrompt) {
+            prompt += `System: ${systemPrompt}\n`;
+        }
+        
+        // add the history messages (if any)
         if (history && history.length > 0) {
             for (const msg of history) {
                 if (msg.role === 'user') {
@@ -225,12 +259,12 @@ async function sendMessageToOllama(message, history) {
             }
         }
         
-        // 添加当前消息
+        // add the current message
         prompt += `User: ${message}\nAssistant:`;
         
         console.log("Formatted prompt:", prompt);
         
-        // 使用 fetch API 发送请求
+        // use fetch API to send the request
         const response = await fetch(ollamaUrl, {
             method: 'POST',
             headers: {
@@ -239,7 +273,11 @@ async function sendMessageToOllama(message, history) {
             body: JSON.stringify({
                 model: ollamaModel,
                 prompt: prompt,
-                stream: useStreaming
+                stream: useStreaming,
+                options: {
+                    num_ctx: 2048,  // set the context window size
+                    include_context: false  // don't include context data, to reduce response size
+                }
             })
         });
         
@@ -250,7 +288,7 @@ async function sendMessageToOllama(message, history) {
             throw new Error(`Ollama API error: ${response.status}`);
         }
         
-        // 如果不使用流式响应，直接返回完整响应
+        // if not streaming, return the full response
         if (!useStreaming) {
             const data = await response.json();
             console.log("Ollama response:", data);
@@ -264,12 +302,12 @@ async function sendMessageToOllama(message, history) {
             };
         }
         
-        // 读取流式响应
+        // read the streaming response
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullResponse = '';
         
-        // 返回流式响应所需的对象
+        // return the objects needed for streaming response
         return {
             streaming: true,
             reader,
@@ -283,13 +321,13 @@ async function sendMessageToOllama(message, history) {
     }
 }
 
-// 添加重试逻辑
+// add retry logic
 let retryCount = 0;
 const maxRetries = 3;
 
 async function sendWithRetry() {
     try {
-        // 发送请求逻辑...
+        // send request logic...
     } catch (error) {
         if (retryCount < maxRetries) {
             retryCount++;
@@ -300,3 +338,35 @@ async function sendWithRetry() {
         }
     }
 }
+
+// listen for extension installation or update events
+chrome.runtime.onInstalled.addListener(async (details) => {
+    if (details.reason === 'install') {
+        // set default settings
+        const defaultSettings = {
+            // ... existing default settings ...
+            systemPrompt: 'You are a helpful AI assistant. Answer questions concisely and accurately.',
+            // ... existing default settings ...
+        };
+        
+        // save default settings
+        await chrome.storage.local.set({ settings: defaultSettings });
+        console.log('Default settings initialized');
+    }
+});
+
+// add this at the top of background.js, for suppressing specific JSON parsing error warnings
+const originalConsoleWarn = console.warn;
+console.warn = function(...args) {
+    // filter out specific JSON parsing error warnings
+    if (args.length > 0 && 
+        typeof args[0] === 'string' && 
+        args[0].includes('Error parsing JSON line:')) {
+        // log to console, but not as a warning
+        console.debug(...args);
+        return;
+    }
+    
+    // for other warnings, use the original console.warn
+    originalConsoleWarn.apply(console, args);
+};

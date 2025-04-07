@@ -120,23 +120,19 @@ export function loadAIChat(container) {
         codeBlocks.clear();
         
         try {
-            // Send message to Ollama, using streaming response
-            const response = await sendMessageToOllama(
-                message, 
-                chatHistory.slice(0, -1),
-                (chunk, full) => {
-                    // Remove typing indicator
-                    if (assistantContent.contains(typingIndicator)) {
-                        assistantContent.removeChild(typingIndicator);
-                    }
-                    
-                    // 使用增量更新方法处理内容
-                    updateStreamingContent(assistantContent, full);
-                    
-                    // Scroll to bottom
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
+            // Send message to Ollama
+            const response = await sendMessageToOllama(message, chatHistory, (chunk, fullText) => {
+                // Remove typing indicator
+                if (assistantContent.contains(typingIndicator)) {
+                    assistantContent.removeChild(typingIndicator);
                 }
-            );
+                
+                // 使用增量更新方法处理内容
+                updateStreamingContent(assistantContent, fullText);
+                
+                // Scroll to bottom
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            });
             
             // Ensure final content is updated
             if (assistantContent.contains(typingIndicator)) {

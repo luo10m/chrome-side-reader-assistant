@@ -1,36 +1,46 @@
-// Default settings
-const defaultSettings = {
-  ollamaUrl: 'http://192.168.5.99:11434/api/generate',
-  ollamaModel: 'qwen2.5:7b',
-  theme: 'light'
-};
+/**
+ * 设置访问工具
+ * 这个文件提供了访问和更新设置的函数
+ */
 
-// Load settings from storage
-export async function loadSettings() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['settings'], (result) => {
-      if (result.settings) {
-        resolve({ ...defaultSettings, ...result.settings });
-      } else {
-        resolve(defaultSettings);
-      }
+// 获取当前设置
+export async function getSettings() {
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+            action: 'getSettings'
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                reject(chrome.runtime.lastError);
+            } else if (response.error) {
+                reject(response.error);
+            } else {
+                resolve(response);
+            }
+        });
     });
-  });
 }
 
-// Save settings to storage
-export async function saveSettings(settings) {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ settings }, () => {
-      resolve();
+// 更新设置
+export async function updateSettings(settings) {
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+            action: 'updateSettings',
+            settings: settings
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                reject(chrome.runtime.lastError);
+            } else if (response.error) {
+                reject(response.error);
+            } else {
+                resolve(response);
+            }
+        });
     });
-  });
 }
 
-// Update a single setting
+// 更新单个设置
 export async function updateSetting(key, value) {
-  const settings = await loadSettings();
-  settings[key] = value;
-  await saveSettings(settings);
-  return settings;
+    const settings = await getSettings();
+    settings[key] = value;
+    return updateSettings(settings);
 } 

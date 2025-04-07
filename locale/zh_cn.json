@@ -16,6 +16,11 @@
   },
   "settings": {
     "header": "设置",
+    "tabs": {
+      "general": "通用",
+      "ollama": "Ollama",
+      "systemPrompt": "系统提示"
+    },
     "sections": {
       "ollama": {
         "title": "Ollama 设置",
@@ -45,6 +50,12 @@
         "language": {
           "label": "语言"
         }
+      },
+      "systemPrompt": {
+        "title": "系统提示",
+        "label": "系统提示",
+        "placeholder": "在此输入系统提示...",
+        "help": "系统提示在每次对话开始时发送给 AI 以设置上下文和行为。"
       }
     },
     "buttons": {

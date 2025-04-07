@@ -1,5 +1,7 @@
 // Send message to Ollama via background script with streaming support
 export async function sendMessageToOllama(message, history, onUpdate) {
+    const settings = await getSettings();
+    
     console.log("Sending message to Ollama:", message);
     console.log("History:", history);
     
@@ -8,7 +10,8 @@ export async function sendMessageToOllama(message, history, onUpdate) {
         chrome.runtime.sendMessage({
             action: 'sendMessageToOllama',
             message: message,
-            history: history
+            history: history,
+            systemPrompt: settings.systemPrompt // 单独传递系统提示
         }, (response) => {
             console.log("Initial response from background script:", response);
             
