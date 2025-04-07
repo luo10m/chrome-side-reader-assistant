@@ -3,127 +3,184 @@
  * 使用 marked 和 highlight.js 提供更好的 Markdown 渲染和代码高亮
  */
 
-// 初始化 highlight.js 和 marked
-function initMarkdownRenderer() {
-    // 检查 highlight.js 是否已加载
-    if (typeof hljs === 'undefined') {
-        console.error('highlight.js is not loaded!');
-        return;
+import { t } from './i18n.js';
+
+// 检查 highlight.js 是否已加载
+let hljs;
+let hljsLoaded = false;
+let hljsLanguages = [];
+
+// 初始化 highlight.js
+function initHighlight() {
+    if (typeof window.hljs !== 'undefined') {
+        hljs = window.hljs;
+        hljsLoaded = true;
+        hljsLanguages = hljs.listLanguages();
+        console.log('highlight.js loaded, available languages:', hljsLanguages);
+    } else {
+        console.warn('highlight.js not loaded');
     }
-    
-    console.log('highlight.js loaded, available languages:', hljs.listLanguages());
-    
-    // 配置 highlight.js
-    hljs.configure({
-        languages: ['javascript', 'html', 'xml', 'css', 'python', 'java', 'cpp', 'json'],
-        ignoreUnescapedHTML: true
-    });
+}
 
-    // 配置 marked
-    marked.setOptions({
-        highlight: function(code, lang) {
-            console.log(`Highlighting code with language: ${lang}`);
-            if (lang && hljs.getLanguage(lang)) {
-                try {
-                    const result = hljs.highlight(code, { 
-                        language: lang,
-                        ignoreIllegals: true 
-                    }).value;
-                    console.log('Highlight successful');
-                    return result;
-                } catch (e) {
-                    console.error('Highlight error:', e);
-                }
+// 尝试初始化
+initHighlight();
+
+// 如果初始化失败，等待 DOMContentLoaded 事件再次尝试
+if (!hljsLoaded) {
+    window.addEventListener('DOMContentLoaded', initHighlight);
+}
+
+// 配置 marked
+marked.setOptions({
+    highlight: function(code, lang) {
+        console.log(`Highlighting code with language: ${lang}`);
+        if (lang && hljs.getLanguage(lang)) {
+            try {
+                const result = hljs.highlight(code, { 
+                    language: lang,
+                    ignoreIllegals: true 
+                }).value;
+                console.log('Highlight successful');
+                return result;
+            } catch (e) {
+                console.error('Highlight error:', e);
             }
-            console.log('Using auto highlight');
-            return hljs.highlightAuto(code).value;
-        },
-        langPrefix: 'hljs language-',
-        breaks: true,
-        gfm: true
-    });
-}
-
-// 包装代码块的函数
-function wrapCodeBlock(html) {
-    let codeBlockCount = 0;
-    return html.replace(/<pre><code[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/code><\/pre>/g, 
-        (match, classNames, code) => {
-            const id = `code-${Date.now()}-${codeBlockCount++}`;
-            const languageMatch = classNames.match(/language-(\w+)/);
-            const language = languageMatch ? languageMatch[1] : 'text';
-            
-            console.log(`Wrapping code block with language: ${language}, class names: ${classNames}`);
-            
-            // 为复制功能准备代码
-            const decodedCode = code
-                .replace(/&lt;/g, '<')
-                .replace(/&gt;/g, '>')
-                .replace(/&amp;/g, '&')
-                .replace(/&quot;/g, '"')
-                .replace(/&#39;/g, "'");
-            
-            // 将换行符编码为特殊标记，以便在复制时能够正确处理
-            const encodedCode = decodedCode
-                .replace(/\n/g, '\\n')
-                .replace(/\r/g, '\\r')
-                .replace(/\t/g, '\\t')
-                .replace(/"/g, '&quot;');
-            
-            return `
-                <div class="code-block">
-                    <div class="code-header">
-                        <span class="code-language">${language}</span>
-                        <button class="copy-button" data-code="${encodedCode}">Copy</button>
-                    </div>
-                    <pre><code id="${id}" class="${classNames}">${code}</code></pre>
-                </div>
-            `;
         }
-    );
-}
+        console.log('Using auto highlight');
+        return hljs.highlightAuto(code).value;
+    },
+    langPrefix: 'hljs language-',
+    breaks: true,
+    gfm: true
+});
 
 // 渲染 Markdown 为 HTML
-export function renderMarkdown(text) {
-    if (!text) return '';
+export function renderMarkdown(markdown) {
+    if (!markdown) return '';
     
-    // 确保 marked 和 hljs 已初始化
-    if (typeof marked === 'undefined' || typeof hljs === 'undefined') {
-        console.error('marked or highlight.js not loaded');
-        return escapeHtml(text).replace(/\n/g, '<br>');
-    }
+    // 使用 marked 将 Markdown 转换为 HTML
+    const html = marked.parse(markdown);
     
-    // 初始化渲染器
-    initMarkdownRenderer();
+    // 使用 DOMPurify 清理 HTML，防止 XSS 攻击
+    const sanitized = DOMPurify.sanitize(html);
     
-    try {
-        // 使用 marked 渲染 Markdown
-        let html = marked.parse(text);
+    // 处理代码块，添加复制按钮和语言标签
+    const processed = processCodeBlocks(sanitized);
+    
+    return processed;
+}
+
+/**
+ * 处理代码块，添加复制按钮和语言标签
+ * @param {string} html HTML 文本
+ * @returns {string} 处理后的 HTML
+ */
+function processCodeBlocks(html) {
+    // 创建临时 DOM 元素
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    
+    // 处理带有语言的代码块
+    tempDiv.querySelectorAll('pre code[class^="language-"]').forEach(codeElement => {
+        const pre = codeElement.parentElement;
+        const codeBlock = document.createElement('div');
+        codeBlock.className = 'code-block';
         
-        // 包装代码块
-        html = wrapCodeBlock(html);
+        // 获取语言
+        const langClass = Array.from(codeElement.classList).find(cls => cls.startsWith('language-'));
+        const language = langClass ? langClass.replace('language-', '') : '';
         
-        // 使用 DOMPurify 清理 HTML
-        if (typeof DOMPurify !== 'undefined') {
-            html = DOMPurify.sanitize(html);
+        // 创建代码块头部
+        const header = document.createElement('div');
+        header.className = 'code-header';
+        
+        // 添加语言标签
+        const langLabel = document.createElement('span');
+        langLabel.className = 'code-language';
+        langLabel.textContent = language || 'text';
+        header.appendChild(langLabel);
+        
+        // 添加复制按钮
+        const copyButton = document.createElement('button');
+        copyButton.className = 'copy-button';
+        copyButton.textContent = t('chat.copy');
+        copyButton.setAttribute('data-code', codeElement.textContent);
+        header.appendChild(copyButton);
+        
+        // 将原始代码块包装在新的结构中
+        pre.parentNode.insertBefore(codeBlock, pre);
+        codeBlock.appendChild(header);
+        codeBlock.appendChild(pre);
+        
+        // 应用代码高亮
+        if (hljsLoaded) {
+            // 为代码块添加一个唯一ID，避免重复高亮
+            if (!codeElement.id) {
+                const codeId = `code-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                codeElement.setAttribute('id', codeId);
+            }
+            
+            // 只有当代码块没有高亮过时才应用高亮
+            if (!codeElement.classList.contains('hljs')) {
+                if (language === '' || hljsLanguages.includes(language)) {
+                    hljs.highlightElement(codeElement);
+                }
+            }
         }
+    });
+    
+    // 处理普通代码块
+    tempDiv.querySelectorAll('pre code:not([class^="language-"])').forEach(codeElement => {
+        const pre = codeElement.parentElement;
+        const codeBlock = document.createElement('div');
+        codeBlock.className = 'code-block';
         
-        // 返回处理后的 HTML
-        const result = html;
+        // 创建代码块头部
+        const header = document.createElement('div');
+        header.className = 'code-header';
         
-        // 使用 setTimeout 确保 DOM 已更新后再初始化高亮
-        setTimeout(() => {
-            // 手动初始化所有代码块
-            document.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block);
-            });
-        }, 0);
+        // 添加语言标签
+        const langLabel = document.createElement('span');
+        langLabel.className = 'code-language';
+        langLabel.textContent = 'text';
+        header.appendChild(langLabel);
         
-        return result;
-    } catch (error) {
-        console.error('Error rendering markdown:', error);
-        return escapeHtml(text).replace(/\n/g, '<br>');
-    }
+        // 添加复制按钮
+        const copyButton = document.createElement('button');
+        copyButton.className = 'copy-button';
+        copyButton.textContent = t('chat.copy');
+        copyButton.setAttribute('data-code', codeElement.textContent);
+        header.appendChild(copyButton);
+        
+        // 将原始代码块包装在新的结构中
+        pre.parentNode.insertBefore(codeBlock, pre);
+        codeBlock.appendChild(header);
+        codeBlock.appendChild(pre);
+        
+        // 应用代码高亮
+        if (hljsLoaded && !codeElement.classList.contains('hljs')) {
+            // 为代码块添加一个唯一ID，避免重复高亮
+            const codeId = `code-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            codeElement.setAttribute('id', codeId);
+            
+            hljs.highlightElement(codeElement);
+        }
+    });
+    
+    return tempDiv.innerHTML;
+}
+
+/**
+ * 应用代码高亮
+ * @param {HTMLElement} element 包含代码块的元素
+ */
+export function applyCodeHighlight(element) {
+    if (!hljsLoaded) return;
+    
+    // 查找所有未高亮的代码块
+    element.querySelectorAll('pre code:not(.hljs)').forEach(block => {
+        hljs.highlightElement(block);
+    });
 }
 
 // 转义 HTML 特殊字符

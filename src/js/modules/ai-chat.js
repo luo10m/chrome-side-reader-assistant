@@ -60,6 +60,9 @@ export function loadAIChat(container) {
     }
     
     // Function to send message
+    let streamingMessageElement = null;
+    let codeBlocks = new Map(); // 用于跟踪代码块
+    
     async function sendMessage() {
         const message = chatInput.value.trim();
         
@@ -96,7 +99,11 @@ export function loadAIChat(container) {
         chatMessages.appendChild(assistantElement);
         chatMessages.scrollTop = chatMessages.scrollHeight;
         
-        let fullContent = '';
+        // 保存当前正在流式传输的消息元素引用
+        streamingMessageElement = assistantContent;
+        
+        // 重置代码块跟踪
+        codeBlocks.clear();
         
         try {
             // Send message to Ollama, using streaming response
@@ -109,9 +116,8 @@ export function loadAIChat(container) {
                         assistantContent.removeChild(typingIndicator);
                     }
                     
-                    // Update content
-                    fullContent = full;
-                    assistantContent.innerHTML = renderMarkdown(fullContent);
+                    // 使用增量更新方法处理内容
+                    updateStreamingContent(assistantContent, full);
                     
                     // Scroll to bottom
                     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -122,7 +128,16 @@ export function loadAIChat(container) {
             if (assistantContent.contains(typingIndicator)) {
                 assistantContent.removeChild(typingIndicator);
             }
+            
+            // 最终渲染
             assistantContent.innerHTML = renderMarkdown(response.content);
+            
+            // 应用最终的代码高亮
+            if (typeof hljs !== 'undefined') {
+                assistantContent.querySelectorAll('pre code').forEach(block => {
+                    hljs.highlightElement(block);
+                });
+            }
             
             // Add assistant message to chat history
             chatHistory.push({
@@ -132,6 +147,10 @@ export function loadAIChat(container) {
             
             // Save chat history to storage
             chrome.storage.local.set({ chatHistory });
+            
+            // 清除流式消息引用
+            streamingMessageElement = null;
+            codeBlocks.clear();
         } catch (error) {
             // Remove typing indicator
             if (assistantContent.contains(typingIndicator)) {
@@ -143,6 +162,36 @@ export function loadAIChat(container) {
             
             console.error('Error sending message:', error);
         }
+    }
+    
+    // 增量更新流式内容的函数
+    function updateStreamingContent(element, markdown) {
+        // 渲染 markdown 为 HTML
+        const html = renderMarkdown(markdown);
+        
+        // 更新元素内容
+        element.innerHTML = html;
+        
+        // 处理代码块高亮
+        const currentCodeBlocks = element.querySelectorAll('pre code');
+        
+        currentCodeBlocks.forEach((block, index) => {
+            const blockId = block.id || `code-block-${index}`;
+            
+            // 如果这个代码块之前没有高亮过，则应用高亮
+            if (!codeBlocks.has(blockId) && typeof hljs !== 'undefined') {
+                // 为代码块设置ID以便跟踪
+                if (!block.id) {
+                    block.id = blockId;
+                }
+                
+                // 应用高亮
+                hljs.highlightElement(block);
+                
+                // 记录这个代码块已经高亮
+                codeBlocks.set(blockId, true);
+            }
+        });
     }
     
     // Event listeners

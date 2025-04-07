@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Side-AI",
-  "version": "1.0.0",
-  "description": "A Chrome extension for accessing Ollama services",
+  "version": "1.0.1",
+  "description": "A Chrome extension for accessing any ai services",
   "action": {
     "default_title": "Side-AI",
     "default_icon": {
