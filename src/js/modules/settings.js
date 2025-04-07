@@ -107,6 +107,9 @@ export async function loadSettings(container) {
         </div>
         
         <div class="settings-actions">
+            <button id="reset-settings" class="settings-button secondary" data-i18n-title="settings.buttons.reset">
+                <img src="assets/svg/reset.svg" alt="Reset" class="button-icon">
+            </button>
             <button id="save-settings" class="settings-button primary" data-i18n="settings.buttons.save">Save Settings</button>
         </div>
     `;
@@ -143,6 +146,7 @@ export async function loadSettings(container) {
     const testApiButton = document.getElementById('test-api');
     const useStreamingCheckbox = document.getElementById('use-streaming');
     const systemPromptTextarea = document.getElementById('system-prompt');
+    const resetSettingsButton = document.getElementById('reset-settings');
     
     // Set current language
     languageSelect.value = getCurrentLanguage();
@@ -428,6 +432,88 @@ export async function loadSettings(container) {
             showNotification(container, t('settings.notifications.error', { error: error.message }), 'error');
         }
     });
+
+    // 重置设置按钮点击事件
+    resetSettingsButton.addEventListener('click', async () => {
+        // 显示确认对话框
+        if (confirm(t('settings.confirmations.reset'))) {
+            try {
+                // 发送重置设置请求
+                const resetSettings = await updateSettings({
+                    reset: true  // 特殊标记，表示重置设置
+                });
+                
+                // 不重新加载页面，而是更新当前页面的设置
+                if (resetSettings) {
+                    // 更新 URL 输入框
+                    try {
+                        const url = new URL(resetSettings.ollamaUrl);
+                        ollamaHostInput.value = `${url.protocol}//${url.hostname}`;
+                        ollamaPortInput.value = url.port || '11434';
+                        ollamaPathInput.value = url.pathname || '/api/generate';
+                    } catch (e) {
+                        ollamaHostInput.value = 'http://192.168.5.99';
+                        ollamaPortInput.value = '11434';
+                        ollamaPathInput.value = '/api/generate';
+                    }
+                    
+                    // 更新其他设置
+                    themeSelect.value = resetSettings.theme || 'light';
+                    languageSelect.value = resetSettings.language || 'en';
+                    useProxyCheckbox.checked = resetSettings.useProxy || false;
+                    useStreamingCheckbox.checked = resetSettings.useStreaming !== false;
+                    systemPromptTextarea.value = resetSettings.systemPrompt || '';
+                    
+                    // 更新模型列表
+                    const fullUrl = `${ollamaHostInput.value}:${ollamaPortInput.value}${ollamaPathInput.value}`;
+                    fetchModelList(fullUrl, useProxyCheckbox.checked, resetSettings.ollamaModel);
+                    
+                    // 应用主题
+                    document.documentElement.setAttribute('data-theme', resetSettings.theme);
+                    updateCodeHighlightTheme(resetSettings.theme);
+                    
+                    // 如果语言已更改，加载新语言
+                    if (resetSettings.language !== getCurrentLanguage()) {
+                        await loadLanguage(resetSettings.language);
+                    }
+                    
+                    // 显示成功消息
+                    showNotification(container, t('settings.notifications.resetSuccess'), 'success');
+                }
+            } catch (error) {
+                // 显示错误消息
+                showNotification(container, t('settings.notifications.resetError', { error: error.message }), 'error');
+            }
+        }
+    });
+
+    // 在设置加载时添加主题变化监听
+    const resetButton = document.getElementById('reset-settings');
+    const resetIcon = resetButton.querySelector('img');
+
+    // 初始设置图标
+    updateResetIcon(document.documentElement.getAttribute('data-theme'));
+
+    // 监听主题变化
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.attributeName === 'data-theme') {
+                const theme = document.documentElement.getAttribute('data-theme');
+                updateResetIcon(theme);
+            }
+        });
+    });
+
+    observer.observe(document.documentElement, { attributes: true });
+
+    // 更新重置图标
+    function updateResetIcon(theme) {
+        if (theme === 'dark') {
+            resetIcon.src = 'assets/svg/reset-dark.svg';
+        } else {
+            resetIcon.src = 'assets/svg/reset.svg';
+        }
+    }
 }
 
 // Update code highlight theme

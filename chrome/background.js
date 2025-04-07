@@ -8,6 +8,7 @@ const defaultSettings = {
     ollamaUrl: 'http://192.168.5.99:11434/api/generate',
     ollamaModel: 'qwen2.5:7b',
     theme: 'light',
+    language: 'en',
     useProxy: false,
     useStreaming: true,
     systemPrompt: 'Act as an expert in [user topic]. Provide a detailed, clear, and helpful response to the following request: [user request or question]. Make sure your explanation is easy to understand and includes examples where relevant. You are a helpful assistant.'
@@ -210,16 +211,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse(currentSettings);
         return false;
     } else if (request.action === 'updateSettings') {
-        // update settings
-        saveSettings(request.settings)
-            .then(() => {
+        // 检查是否是重置设置请求
+        if (request.settings && request.settings.reset === true) {
+            // 重置为默认设置
+            currentSettings = { ...defaultSettings };
+            chrome.storage.local.set({ settings: currentSettings }, () => {
                 sendResponse(currentSettings);
-            })
-            .catch(error => {
-                sendResponse({ error: error.message });
             });
+        } else {
+            // 正常更新设置
+            saveSettings(request.settings)
+                .then(() => {
+                    sendResponse(currentSettings);
+                })
+                .catch(error => {
+                    sendResponse({ error: error.message });
+                });
+        }
         
-        // return true to indicate that the response will be sent asynchronously
+        // 返回 true 表示响应将异步发送
         return true;
     }
 });

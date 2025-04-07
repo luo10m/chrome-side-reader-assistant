@@ -16,6 +16,7 @@
 - Add timeout support to settings
 - Add retry logic to settings
 - Add default settings
+- Add reset settings button to side panel
 
 ## v1.0.0
 

@@ -59,6 +59,7 @@
       }
     },
     "buttons": {
+      "reset": "Reset Settings",
       "save": "Save Settings",
       "testConnection": "Test Connection",
       "testApi": "Test API",
@@ -75,7 +76,12 @@
     },
     "notifications": {
       "saved": "Settings saved successfully!",
-      "error": "Error saving settings: {error}"
+      "error": "Error saving settings: {error}",
+      "resetError": "Error resetting settings: {error}",
+      "resetSuccess": "Settings reset successfully!"
+    },
+    "confirmations": {
+      "reset": "Are you sure you want to reset all settings to default values?"
     }
   }
 } 
