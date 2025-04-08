@@ -14,28 +14,30 @@ export function loadAIChat(container) {
     // 在文件顶部添加变量
     let isGenerating = false; // 标记 AI 是否正在生成回复
     
-    // Create chat UI
+    // Create chat UI with redesigned layout
     container.innerHTML = `
         <div class="chat-container">
             <div class="chat-header">
                 <h2 data-i18n="chat.header">AI Chat</h2>
-                <div class="chat-header-actions">
-                    <button id="new-chat-button" class="icon-button" data-i18n-title="chat.newChat">
-                        <img src="assets/svg/new-chat.svg" alt="New Chat" class="button-icon">
-                    </button>
-                    <button id="history-button" class="icon-button" data-i18n-title="chat.history">
-                        <img src="assets/svg/history.svg" alt="History" class="button-icon">
-                    </button>
-                </div>
             </div>
             <div class="chat-messages" id="chat-messages">
-                <!-- Messages will be added here -->
+                <!-- Welcome message will be added here -->
             </div>
-            <div class="chat-input-container">
-                <textarea id="chat-input" data-i18n-placeholder="chat.placeholder" placeholder="Type your message..." rows="1"></textarea>
-                <button id="send-button" data-i18n-title="chat.send">
-                    <img src="assets/svg/send.svg" alt="Send" class="button-icon">
-                </button>
+            <div class="chat-input-wrapper">
+                <div class="chat-input-container">
+                    <textarea id="chat-input" data-i18n-placeholder="chat.placeholder" placeholder="Type your message..." rows="1"></textarea>
+                    <div class="chat-actions">
+                        <button id="new-chat-button" class="action-button" data-i18n-title="chat.newChat">
+                            <img src="assets/svg/new-chat.svg" alt="New Chat" class="button-icon">
+                        </button>
+                        <button id="history-button" class="action-button" data-i18n-title="chat.history">
+                            <img src="assets/svg/history.svg" alt="History" class="button-icon">
+                        </button>
+                        <button id="send-button" data-i18n-title="chat.send">
+                            <img src="assets/svg/send.svg" alt="Send" class="button-icon">
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -64,6 +66,19 @@ export function loadAIChat(container) {
     const historyPopup = document.getElementById('history-popup');
     const closeHistoryButton = document.getElementById('close-history');
     const historyList = document.getElementById('history-list');
+    
+    // Add welcome message
+    function addWelcomeMessage() {
+        const welcomeElement = document.createElement('div');
+        welcomeElement.className = 'message assistant welcome-message';
+        
+        const contentElement = document.createElement('div');
+        contentElement.className = 'message-content';
+        contentElement.innerHTML = renderMarkdown(t('chat.welcomeMessage', 'Hi, How can I help you today?'));
+        
+        welcomeElement.appendChild(contentElement);
+        chatMessages.appendChild(welcomeElement);
+    }
     
     // Function to add message to UI
     function addMessageToUI(role, content) {
@@ -125,64 +140,69 @@ export function loadAIChat(container) {
             return;
         }
         
-        // 只清空输入内容，让 CSS 自动处理高度
+        // 删除欢迎消息（如果存在）
+        const welcomeMessage = document.querySelector('.welcome-message');
+        if (welcomeMessage) {
+            welcomeMessage.remove();
+        }
+        
+        // Clear input
         chatInput.value = '';
         
-        // 添加用户消息到UI
+        // Reset input height
+        chatInput.style.height = 'auto';
+        
+        // Add user message to UI
         addMessageToUI('user', message);
         
-        // 添加到聊天历史
+        // Add user message to chat history
         chatHistory.push({
             role: 'user',
             content: message
         });
         
-        // 保存当前聊天
-        await saveCurrentChat();
+        // Create streaming message element
+        const assistantMessageElement = document.createElement('div');
+        assistantMessageElement.className = 'message assistant';
         
-        // Create assistant message element
-        const assistantElement = document.createElement('div');
-        assistantElement.className = 'message assistant';
+        const contentElement = document.createElement('div');
+        contentElement.className = 'message-content';
         
-        const assistantContent = document.createElement('div');
-        assistantContent.className = 'message-content';
-        
-        // Initial display as typing indicator
+        // Add typing indicator
         const typingIndicator = document.createElement('div');
         typingIndicator.className = 'typing-indicator';
         typingIndicator.innerHTML = '<span></span><span></span><span></span>';
         
-        assistantContent.appendChild(typingIndicator);
-        assistantElement.appendChild(assistantContent);
+        contentElement.appendChild(typingIndicator);
+        assistantMessageElement.appendChild(contentElement);
         
-        chatMessages.appendChild(assistantElement);
+        chatMessages.appendChild(assistantMessageElement);
+        
+        // Scroll to bottom
         chatMessages.scrollTop = chatMessages.scrollHeight;
         
-        // 保存当前正在流式传输的消息元素引用
-        streamingMessageElement = assistantContent;
+        // Set streaming message element
+        streamingMessageElement = contentElement;
         
-        // 重置代码块跟踪
-        codeBlocks.clear();
-        
-        // 设置生成状态为 true，并禁用输入
+        // Set generating state
         isGenerating = true;
         updateInputState();
         
         try {
-            // 获取当前设置
+            // Get settings
             const settings = await getSettings();
             
-            // 根据默认 AI 提供商选择不同的 API
+            // Choose API based on default AI provider
             let response;
             
             if (settings.defaultAI === 'openai') {
-                // 导入 OpenAI 服务
+                // Import OpenAI service
                 const { sendMessageToOpenAI, parseOpenAIStreamingResponse } = await import('../services/openai-service.js');
                 
-                // 使用 OpenAI API
+                // Use OpenAI API
                 response = await sendMessageToOpenAI(message, chatHistory, settings.systemPrompt);
                 
-                // 处理流式响应
+                // Handle streaming response
                 if (response.streaming) {
                     const { reader, decoder } = response;
                     let fullText = '';
@@ -195,13 +215,13 @@ export function loadAIChat(container) {
                             break;
                         }
                         
-                        // 解码数据块
+                        // Decode chunk
                         const chunk = decoder.decode(value, { stream: true });
                         buffer += chunk;
                         
-                        // 处理完整的数据行
+                        // Process complete lines
                         const lines = buffer.split('\n');
-                        buffer = lines.pop(); // 保留最后一个可能不完整的行
+                        buffer = lines.pop(); // Keep the last potentially incomplete line
                         
                         for (const line of lines) {
                             if (line.trim()) {
@@ -244,7 +264,7 @@ export function loadAIChat(container) {
                         }
                     }
                     
-                    // 处理最后一个缓冲区
+                    // Process the last buffer
                     if (buffer.trim()) {
                         const parsed = parseOpenAIStreamingResponse(buffer);
                         if (!parsed.done && parsed.content) {
@@ -275,16 +295,16 @@ export function loadAIChat(container) {
                         }
                     }
                     
-                    // 添加到聊天历史
+                    // Add to chat history
                     chatHistory.push({
                         role: 'assistant',
                         content: fullText
                     });
                     
-                    // 保存聊天历史
+                    // Save chat history
                     await saveCurrentChat();
                 } else {
-                    // 处理非流式响应
+                    // Handle non-streaming response
                     // 直接更新 streamingMessageElement
                     if (streamingMessageElement) {
                         // 移除打字指示器
@@ -315,367 +335,277 @@ export function loadAIChat(container) {
                         chatMessages.scrollTop = chatMessages.scrollHeight;
                     }
                     
-                    // 添加到聊天历史
+                    // Add to chat history
                     chatHistory.push({
                         role: 'assistant',
                         content: response.fullResponse
                     });
                     
-                    // 保存聊天历史
+                    // Save chat history
                     await saveCurrentChat();
                 }
                 
-                // 重置生成状态
+                // Reset generating state
                 isGenerating = false;
                 updateInputState();
             } else {
-                // 默认使用 Ollama API
+                // Default to Ollama API
                 response = await sendMessageToOllama(message, chatHistory, (chunk, fullText) => {
                     // Remove typing indicator
-                    if (assistantContent.contains(typingIndicator)) {
-                        assistantContent.removeChild(typingIndicator);
+                    const typingIndicator = streamingMessageElement.querySelector('.typing-indicator');
+                    if (typingIndicator) {
+                        typingIndicator.remove();
                     }
                     
-                    // 使用增量更新方法处理内容
-                    updateStreamingContent(assistantContent, fullText);
+                    // Update content
+                    streamingMessageElement.innerHTML = renderMarkdown(fullText);
+                    
+                    // Apply code highlighting
+                    if (typeof hljs !== 'undefined') {
+                        try {
+                            streamingMessageElement.querySelectorAll('pre code').forEach((block) => {
+                                try {
+                                    hljs.highlightElement(block);
+                                } catch (e) {
+                                    console.debug('Error highlighting code block:', e);
+                                }
+                            });
+                        } catch (e) {
+                            console.debug('Error during code highlighting:', e);
+                        }
+                    }
                     
                     // Scroll to bottom
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 });
+                
+                // Add assistant message to chat history
+                chatHistory.push({
+                    role: 'assistant',
+                    content: response.content
+                });
+                
+                // Save chat history
+                await saveCurrentChat();
+                
+                // Reset generating state
+                isGenerating = false;
+                updateInputState();
             }
             
             // Reset streaming message element
             streamingMessageElement = null;
-            codeBlocks.clear();
-            
-            // Save current chat
-            await saveCurrentChat();
         } catch (error) {
-            // Remove typing indicator
-            if (assistantContent.contains(typingIndicator)) {
-                assistantContent.removeChild(typingIndicator);
-            }
+            console.error('Error sending message:', error);
             
             // Show error message
-            assistantContent.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
+            if (streamingMessageElement) {
+                streamingMessageElement.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
+            }
             
-            console.error('Error sending message:', error);
-        } finally {
-            // 无论成功还是失败，都重置生成状态并启用输入
+            // Reset generating state
             isGenerating = false;
             updateInputState();
             
-            // 自动聚焦回输入框
-            setTimeout(() => {
-                chatInput.focus();
-            }, 100); // 短暂延迟确保 UI 已更新
+            // Reset streaming message element
+            streamingMessageElement = null;
         }
     }
     
-    // 更新流式内容的函数
-    function updateStreamingContent(element, content) {
-        // 使用 Markdown 渲染内容
-        const renderedContent = renderMarkdown(content);
+    // Auto-resize textarea
+    chatInput.addEventListener('input', () => {
+        chatInput.style.height = 'auto';
+        chatInput.style.height = (chatInput.scrollHeight) + 'px';
+    });
+    
+    // Create new chat
+    async function createNewChat() {
+        // Clear chat history
+        chatHistory = [];
         
-        // 更新元素内容
-        element.innerHTML = renderedContent;
+        // Generate new chat ID
+        currentChatId = Date.now().toString();
         
-        // 应用代码高亮
-        if (typeof hljs !== 'undefined') {
-            try {
-                element.querySelectorAll('pre code').forEach((block) => {
-                    // 检查这个代码块是否已经高亮过
-                    const blockId = block.parentElement.dataset.id || Math.random().toString(36).substring(2);
-                    block.parentElement.dataset.id = blockId;
-                    
-                    if (!codeBlocks.has(blockId)) {
-                        try {
-                            // 确保代码内容被正确转义
-                            const originalContent = block.textContent;
-                            block.textContent = originalContent;
-                            
-                            hljs.highlightElement(block);
-                             
-                            // 标记为已处理
-                            codeBlocks.set(blockId, true);
-                        } catch (e) {
-                            console.debug('Error highlighting code block:', e);
-                        }
-                    }
-                });
-            } catch (e) {
-                console.debug('Error during code highlighting:', e);
-            }
-        }
+        // Clear chat messages
+        chatMessages.innerHTML = '';
+        
+        // Add welcome message
+        addWelcomeMessage();
+        
+        // Save current chat ID
+        await chrome.storage.local.set({ lastActiveChatId: currentChatId });
+        
+        // Close history popup if open
+        historyPopup.classList.remove('show');
     }
     
-    // Load chat history list
-    async function loadChatHistoryList() {
-        // Clear history list
-        historyList.innerHTML = '';
-        
-        // Get chat history from storage
-        const result = await chrome.storage.local.get(['chatHistoryList']);
-        const chatHistoryList = result.chatHistoryList || [];
-        
-        if (chatHistoryList.length === 0) {
-            // If no history, display prompt information
-            historyList.innerHTML = `<div class="history-empty" data-i18n="chat.noHistory">No chat history</div>`;
-            return;
-        }
-        
-        // Sort by last edit time (latest first)
-        chatHistoryList.sort((a, b) => b.lastEditTime - a.lastEditTime);
-        
-        // Create history items
-        chatHistoryList.forEach(chat => {
-            const historyItem = document.createElement('div');
-            historyItem.className = 'history-item';
-            if (chat.id === currentChatId) {
-                historyItem.classList.add('active');
-            }
+    // Load chat
+    async function loadChat(chatId) {
+        try {
+            // Get chat from storage
+            const result = await chrome.storage.local.get(['chatHistory_' + chatId]);
+            const chat = result['chatHistory_' + chatId];
             
-            // Format date
-            const date = new Date(chat.lastEditTime);
-            const formattedDate = `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
-            
-            historyItem.innerHTML = `
-                <div class="history-item-content">
-                    <div class="history-item-title">${chat.title}</div>
-                    <div class="history-item-time">${formattedDate}</div>
-                </div>
-                <button class="history-delete-button" data-chat-id="${chat.id}" data-i18n-title="chat.delete">×</button>
-            `;
-            
-            // Click to load chat
-            historyItem.addEventListener('click', (e) => {
-                // If clicked is delete button, don't load chat
-                if (e.target.classList.contains('history-delete-button')) {
-                    return;
-                }
+            if (chat) {
+                // Set current chat ID
+                currentChatId = chatId;
                 
-                loadChat(chat.id);
+                // Set chat history
+                chatHistory = chat.messages || [];
+                
+                // Clear chat messages
+                chatMessages.innerHTML = '';
+                
+                // Add messages to UI
+                chatHistory.forEach(message => {
+                    addMessageToUI(message.role, message.content);
+                });
+                
+                // Save current chat ID
+                chrome.storage.local.set({ lastActiveChatId: currentChatId });
+                
+                // Close history popup
                 historyPopup.classList.remove('show');
-            });
-            
-            historyList.appendChild(historyItem);
-        });
-        
-        // Add event listener for delete buttons
-        document.querySelectorAll('.history-delete-button').forEach(button => {
-            button.addEventListener('click', (e) => {
-                e.stopPropagation(); // Prevent event bubbling
-                const chatId = button.getAttribute('data-chat-id');
-                deleteChat(chatId);
-            });
-        });
-    }
-    
-    // 添加 getChatTitle 函数
-    function getChatTitle() {
-        // 获取聊天标题（第一条用户消息的前10个字）
-        let title = '';
-        for (const msg of chatHistory) {
-            if (msg.role === 'user') {
-                title = msg.content.substring(0, 10) + (msg.content.length > 10 ? '...' : '');
-                break;
             }
+        } catch (error) {
+            console.error('Error loading chat:', error);
         }
-        
-        if (!title) {
-            title = t('chat.untitled');
-        }
-        
-        return title;
     }
     
-    // 修改 saveCurrentChat 函数
+    // Save current chat
     async function saveCurrentChat() {
-        if (!currentChatId) {
-            console.error('Cannot save chat: no currentChatId');
-            return;
-        }
-        
-        // 如果聊天历史为空，不保存到历史列表中
-        if (chatHistory.length === 0) {
-            console.log('Not saving empty chat to history list');
+        if (!currentChatId || chatHistory.length === 0) {
             return;
         }
         
         try {
-            // 获取现有的聊天历史列表
-            const result = await chrome.storage.local.get(['chatHistoryList']);
-            let chatHistoryList = result.chatHistoryList || [];
+            // Get chat title (first user message or default)
+            let title = 'Untitled Chat';
+            const firstUserMessage = chatHistory.find(msg => msg.role === 'user');
+            if (firstUserMessage) {
+                title = firstUserMessage.content.substring(0, 30) + (firstUserMessage.content.length > 30 ? '...' : '');
+            }
             
-            // 查找当前聊天
-            const chatIndex = chatHistoryList.findIndex(chat => chat.id === currentChatId);
-            
-            // 准备要保存的聊天数据
-            const chatData = {
+            // Create chat object
+            const chat = {
                 id: currentChatId,
-                title: getChatTitle(),
+                title: title,
                 messages: chatHistory,
                 lastEditTime: Date.now()
             };
             
-            // 如果找到了现有聊天，更新它；否则添加新聊天
-            if (chatIndex !== -1) {
-                chatHistoryList[chatIndex] = chatData;
+            // Save chat to storage
+            await chrome.storage.local.set({ ['chatHistory_' + currentChatId]: chat });
+            
+            // Get chat history list
+            const result = await chrome.storage.local.get(['chatHistoryList']);
+            let chatHistoryList = result.chatHistoryList || [];
+            
+            // Check if chat already exists in list
+            const existingChatIndex = chatHistoryList.findIndex(c => c.id === currentChatId);
+            if (existingChatIndex !== -1) {
+                // Update existing chat
+                chatHistoryList[existingChatIndex] = {
+                    id: chat.id,
+                    title: chat.title,
+                    lastEditTime: chat.lastEditTime
+                };
             } else {
-                // 只有当聊天中有用户消息时才添加到历史列表
-                const hasUserMessage = chatHistory.some(msg => msg.role === 'user');
-                if (hasUserMessage) {
-                    chatHistoryList.push(chatData);
-                    console.log(`Added new chat ${currentChatId} to history list`);
-                } else {
-                    console.log(`Not adding chat ${currentChatId} to history list (no user messages)`);
-                    return; // 不保存没有用户消息的聊天
-                }
+                // Add new chat to list
+                chatHistoryList.push({
+                    id: chat.id,
+                    title: chat.title,
+                    lastEditTime: chat.lastEditTime
+                });
             }
             
-            // 保存更新后的聊天历史列表和最后活动的聊天ID
-            await chrome.storage.local.set({
-                chatHistoryList: chatHistoryList,
-                lastActiveChatId: currentChatId
-            });
-            
-            console.log(`Chat ${currentChatId} saved successfully`);
+            // Save chat history list
+            await chrome.storage.local.set({ chatHistoryList });
         } catch (error) {
             console.error('Error saving chat:', error);
         }
     }
     
-    // Load chat with specified ID
-    async function loadChat(chatId) {
-        console.log(`Loading chat ${chatId}`);
-        
+    // Load chat history list
+    async function loadChatHistoryList() {
         try {
-            // 获取聊天历史列表
+            // Get chat history list
             const result = await chrome.storage.local.get(['chatHistoryList']);
             const chatHistoryList = result.chatHistoryList || [];
             
-            // 查找指定的聊天
-            const chat = chatHistoryList.find(chat => chat.id === chatId);
+            // Sort by last edit time (newest first)
+            chatHistoryList.sort((a, b) => b.lastEditTime - a.lastEditTime);
             
-            if (!chat) {
-                console.error(`Chat ${chatId} not found`);
-                return false;
+            // Clear history list
+            historyList.innerHTML = '';
+            
+            if (chatHistoryList.length === 0) {
+                // Show no history message
+                const noHistoryElement = document.createElement('div');
+                noHistoryElement.className = 'no-history';
+                noHistoryElement.textContent = t('chat.noHistory');
+                historyList.appendChild(noHistoryElement);
+                return;
             }
             
-            // 清空当前聊天UI
-            chatMessages.innerHTML = '';
-            
-            // 设置当前聊天ID
-            currentChatId = chatId;
-            
-            // 加载聊天消息
-            chatHistory = chat.messages || [];
-            
-            // 显示聊天消息
-            for (const msg of chatHistory) {
-                if (msg.role === 'user' || msg.role === 'assistant') {
-                    addMessageToUI(msg.role, msg.content);
+            // Add chats to list
+            chatHistoryList.forEach(chat => {
+                const chatElement = document.createElement('div');
+                chatElement.className = 'history-item';
+                if (chat.id === currentChatId) {
+                    chatElement.classList.add('active');
                 }
-            }
-            
-            // 如果没有消息，添加系统消息
-            if (chatHistory.length === 0) {
-                addSystemMessageToUI(t('chat.systemMessage'));
-            }
-            
-            // 更新最后活动的聊天ID
-            await chrome.storage.local.set({ lastActiveChatId: chatId });
-            
-            console.log(`Chat ${chatId} loaded successfully with ${chatHistory.length} messages`);
-            return true;
+                
+                const titleElement = document.createElement('div');
+                titleElement.className = 'history-title';
+                titleElement.textContent = chat.title || t('chat.untitled');
+                
+                const deleteButton = document.createElement('button');
+                deleteButton.className = 'history-delete-button';
+                deleteButton.innerHTML = '×';
+                deleteButton.title = t('chat.delete');
+                
+                chatElement.appendChild(titleElement);
+                chatElement.appendChild(deleteButton);
+                
+                // Click event to load chat
+                chatElement.addEventListener('click', (e) => {
+                    if (e.target !== deleteButton) {
+                        loadChat(chat.id);
+                    }
+                });
+                
+                // Delete button click event
+                deleteButton.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    
+                    try {
+                        // Remove chat from storage
+                        await chrome.storage.local.remove(['chatHistory_' + chat.id]);
+                        
+                        // Remove chat from list
+                        const result = await chrome.storage.local.get(['chatHistoryList']);
+                        let chatHistoryList = result.chatHistoryList || [];
+                        chatHistoryList = chatHistoryList.filter(c => c.id !== chat.id);
+                        await chrome.storage.local.set({ chatHistoryList });
+                        
+                        // If current chat is deleted, create new chat
+                        if (chat.id === currentChatId) {
+                            createNewChat();
+                        }
+                        
+                        // Reload history list
+                        loadChatHistoryList();
+                    } catch (error) {
+                        console.error('Error deleting chat:', error);
+                    }
+                });
+                
+                historyList.appendChild(chatElement);
+            });
         } catch (error) {
-            console.error('Error loading chat:', error);
-            return false;
+            console.error('Error loading chat history list:', error);
         }
-    }
-    
-    // 修改 createNewChat 函数
-    async function createNewChat() {
-        // 清空聊天历史
-        chatHistory = [];
-        
-        // 清空聊天消息UI
-        chatMessages.innerHTML = '';
-        
-        // 生成新的聊天ID
-        currentChatId = Date.now().toString();
-        
-        // 添加系统消息
-        addSystemMessageToUI(t('chat.systemMessage'));
-        
-        console.log(`New chat created with ID: ${currentChatId}`);
-        
-        // 注意：不再保存空聊天
-        // 只有当用户发送第一条消息时才会保存
-        
-        return currentChatId;
-    }
-    
-    // Delete chat
-    async function deleteChat(chatId) {
-        console.log(`Deleting chat ${chatId}`);
-        
-        // 获取聊天历史列表
-        const result = await chrome.storage.local.get(['chatHistoryList', 'lastActiveChatId']);
-        let chatHistoryList = result.chatHistoryList || [];
-        
-        // 从列表中移除
-        chatHistoryList = chatHistoryList.filter(chat => chat.id !== chatId);
-        
-        // 保存更新后的列表
-        await chrome.storage.local.set({ chatHistoryList });
-        
-        // 删除聊天内容
-        await chrome.storage.local.remove([`chat_${chatId}`]);
-        
-        // 如果删除的是当前活动的聊天，更新lastActiveChatId
-        if (chatId === result.lastActiveChatId) {
-            // 如果还有其他聊天，设置最新的一个为活动聊天
-            if (chatHistoryList.length > 0) {
-                // 按最后编辑时间排序
-                chatHistoryList.sort((a, b) => b.lastEditTime - a.lastEditTime);
-                await chrome.storage.local.set({ lastActiveChatId: chatHistoryList[0].id });
-            } else {
-                // 如果没有其他聊天，清除lastActiveChatId
-                await chrome.storage.local.remove(['lastActiveChatId']);
-            }
-        }
-        
-        // 如果删除的是当前聊天，创建新聊天
-        if (chatId === currentChatId) {
-            // 重要：先将currentChatId设为null，防止在beforeunload事件中保存已删除的聊天
-            const deletedChatId = currentChatId;
-            currentChatId = null;
-            chatHistory = [];
-            
-            // 创建新聊天（这会设置新的currentChatId）
-            await createNewChat();
-            
-            console.log(`Switched from deleted chat ${deletedChatId} to new chat ${currentChatId}`);
-        }
-        
-        // 重新加载历史列表
-        loadChatHistoryList();
-        
-        console.log(`Chat ${chatId} deleted, remaining chats: ${chatHistoryList.length}`);
-    }
-    
-    // Add system message to UI
-    function addSystemMessageToUI(message) {
-        const messageElement = document.createElement('div');
-        messageElement.className = 'message system';
-        messageElement.innerHTML = `
-            <div class="message-content">${message}</div>
-        `;
-        chatMessages.appendChild(messageElement);
-        
-        // Scroll to bottom
-        chatMessages.scrollTop = chatMessages.scrollHeight;
     }
     
     // Send button click event

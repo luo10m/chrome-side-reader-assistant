@@ -19,7 +19,8 @@
     "delete": "Delete",
     "noHistory": "No chat history",
     "untitled": "Untitled Chat",
-    "systemMessage": "Chat history cleared. Start a new conversation."
+    "systemMessage": "Chat history cleared. Start a new conversation.",
+    "welcomeMessage": "Hi, How can I help you today?"
   },
   "settings": {
     "header": "Settings",

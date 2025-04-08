@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## v1.0.3
+- Remake UI
+
 ## v1.0.2
 - Add OpenAI API support
 - Add OpenAI API key to settings

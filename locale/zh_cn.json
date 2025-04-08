@@ -19,7 +19,8 @@
     "delete": "删除",
     "noHistory": "没有聊天历史",
     "untitled": "未命名聊天",
-    "systemMessage": "聊天历史已清除。开始新的对话。"
+    "systemMessage": "聊天历史已清除。开始新的对话。",
+    "welcomeMessage": "你好，今天我能帮你什么忙？"
   },
   "settings": {
     "header": "设置",
