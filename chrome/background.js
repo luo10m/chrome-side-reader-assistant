@@ -61,151 +61,92 @@ chrome.commands.onCommand.addListener((command) => {
 // listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'sendMessageToOllama') {
-        // create a connection ID, for identifying this request
-        const connectionId = Date.now().toString();
+        // 创建一个唯一的消息ID
+        const messageId = Date.now().toString();
         
-        // send initial response, including connection ID
-        sendResponse({ streaming: true, connectionId });
+        // 发送初始响应
+        sendResponse({ messageId });
         
-        // set a listener, waiting for the connection from the front end
-        const connectionListener = (port) => {
-            if (port.name === `ollama-stream-${connectionId}`) {
-                // remove the listener, to avoid memory leak
-                chrome.runtime.onConnect.removeListener(connectionListener);
-                
-                // send message to Ollama
-                sendMessageToOllama(request.message, request.history, request.systemPrompt)
-                    .then(async ({ reader, decoder, fullResponse, model, streaming }) => {
-                        // if not streaming, send the full response and close the connection
-                        if (!streaming) {
-                            port.postMessage({ 
-                                done: true, 
-                                content: fullResponse,
-                                model: model
-                            });
-                            port.disconnect();
-                            return;
-                        }
-                        
-                        try {
-                            // read the streaming response
-                            while (true) {
-                                const { done, value } = await reader.read();
-                                
-                                if (done) {
-                                    // stream ended, send the full response
-                                    port.postMessage({ 
-                                        done: true, 
-                                        content: fullResponse,
-                                        model: model
-                                    });
-                                    port.disconnect();
-                                    break;
-                                }
-                                
-                                // decode the data block
-                                const chunk = decoder.decode(value, { stream: true });
-                                
-                                try {
-                                    // parse JSON lines
-                                    const lines = chunk.split('\n').filter(line => line.trim() !== '');
-                                    
-                                    for (const line of lines) {
-                                        try {
-                                            // try to parse each JSON line
-                                            const data = JSON.parse(line);
-                                            
-                                            if (data.response) {
-                                                // add to the full response
-                                                fullResponse += data.response;
-                                                
-                                                // send incremental updates
-                                                port.postMessage({ 
-                                                    done: false, 
-                                                    content: data.response,
-                                                    model: model
-                                                });
-                                            } else if (data.done) {
-                                                // handle the done signal
-                                                port.postMessage({
-                                                    done: true,
-                                                    content: fullResponse,
-                                                    model: model
-                                                });
-                                            }
-                                        } catch (jsonError) {
-                                            // if single line parsing fails, record the error but continue processing other lines
-                                            console.warn('Error parsing JSON line:', jsonError);
-                                            
-                                            // handle incomplete JSON
-                                            if (line.includes('"response":"')) {
-                                                // try to extract the response content, even if the JSON is incomplete
-                                                const responseMatch = line.match(/"response":"([^"]*)"/);
-                                                if (responseMatch && responseMatch[1]) {
-                                                    const response = responseMatch[1];
-                                                    fullResponse += response;
-                                                    port.postMessage({
-                                                        done: false,
-                                                        content: response,
-                                                        model: model
-                                                    });
-                                                }
-                                            } else if (line.includes('"done":true')) {
-                                                // handle the done signal, even if the JSON is incomplete
-                                                port.postMessage({
-                                                    done: true,
-                                                    content: fullResponse,
-                                                    model: model
-                                                });
-                                            } else if (line.includes('"context":')) {
-                                                // handle the line containing context, this is usually the last line
-                                                // this line may cause parsing errors due to large arrays
-                                                // we can safely ignore it, because we don't need context data
-                                                console.log('Ignoring context data');
-                                                
-                                                // if this is the last line, it may mean the response is complete
-                                                if (!line.includes('"response":')) {
-                                                    port.postMessage({
-                                                        done: true,
-                                                        content: fullResponse,
-                                                        model: model
-                                                    });
-                                                }
-                                            }
-                                        }
-                                    }
-                                } catch (e) {
-                                    console.error('Error processing chunk:', e, chunk);
-                                }
+        // 处理请求
+        sendMessageToOllama(request.message, request.history, request.systemPrompt)
+            .then(async (response) => {
+                if (response.streaming) {
+                    // 处理流式响应
+                    const { reader, decoder } = response;
+                    let fullResponse = '';
+                    
+                    try {
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            
+                            if (done) {
+                                // 流结束，发送完整响应
+                                chrome.runtime.sendMessage({
+                                    action: 'ollamaResponse',
+                                    messageId,
+                                    done: true,
+                                    content: fullResponse
+                                });
+                                break;
                             }
-                        } catch (error) {
-                            console.error('Error reading stream:', error);
-                            port.postMessage({ error: error.message });
-                            port.disconnect();
+                            
+                            // 解码数据块
+                            const chunk = decoder.decode(value, { stream: true });
+                            
+                            // 处理数据块
+                            try {
+                                const lines = chunk.split('\n').filter(line => line.trim());
+                                
+                                for (const line of lines) {
+                                    try {
+                                        const data = JSON.parse(line);
+                                        
+                                        if (data.response) {
+                                            fullResponse += data.response;
+                                            
+                                            // 发送增量更新
+                                            chrome.runtime.sendMessage({
+                                                action: 'ollamaResponse',
+                                                messageId,
+                                                done: false,
+                                                content: data.response
+                                            });
+                                        }
+                                    } catch (e) {
+                                        console.debug('Error parsing JSON line:', e);
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('Error processing chunk:', e);
+                            }
                         }
-                    })
-                    .catch(error => {
-                        console.error('Error sending message to Ollama:', error);
-                        port.postMessage({ error: error.message });
-                        port.disconnect();
+                    } catch (error) {
+                        console.error('Error reading stream:', error);
+                        chrome.runtime.sendMessage({
+                            action: 'ollamaError',
+                            messageId,
+                            error: error.message
+                        });
+                    }
+                } else {
+                    // 非流式响应，直接发送
+                    chrome.runtime.sendMessage({
+                        action: 'ollamaResponse',
+                        messageId,
+                        done: true,
+                        content: response.fullResponse
                     });
-                
-                // listen for port disconnection
-                port.onDisconnect.addListener(() => {
-                    console.log('Port disconnected');
+                }
+            })
+            .catch(error => {
+                console.error('Error sending message to Ollama:', error);
+                chrome.runtime.sendMessage({
+                    action: 'ollamaError',
+                    messageId,
+                    error: error.message
                 });
-            }
-        };
+            });
         
-        // add a connection listener
-        chrome.runtime.onConnect.addListener(connectionListener);
-        
-        // set a timeout, if 5 seconds pass without a connection, remove the listener
-        setTimeout(() => {
-            chrome.runtime.onConnect.removeListener(connectionListener);
-        }, 5000);
-        
-        // return true to indicate that the response will be sent asynchronously
         return true;
     } else if (request.action === 'getSettings') {
         // return the current settings

@@ -2,52 +2,39 @@
 export async function sendMessageToOllama(message, history, onUpdate) {
     const settings = await getSettings();
     
-    console.log("Sending message to Ollama:", message);
-    console.log("History:", history);
-    
     return new Promise((resolve, reject) => {
-        // 发送消息到 background script
+        let isResolved = false;
+        let fullContent = '';
+        
+        // 发送请求
         chrome.runtime.sendMessage({
             action: 'sendMessageToOllama',
-            message: message,
-            history: history,
-            systemPrompt: settings.systemPrompt // 单独传递系统提示
+            message,
+            history,
+            systemPrompt: settings.systemPrompt
         }, (response) => {
-            console.log("Initial response from background script:", response);
-            
             if (chrome.runtime.lastError) {
-                console.error("Runtime error:", chrome.runtime.lastError);
                 reject(chrome.runtime.lastError);
                 return;
             }
             
             if (response.error) {
-                console.error("Response error:", response.error);
-                reject(response.error);
+                reject(new Error(response.error));
                 return;
             }
             
-            // 如果是流式响应
-            if (response.streaming) {
-                // 创建一个端口连接到 background script，使用连接 ID 确保唯一性
-                const port = chrome.runtime.connect({ name: `ollama-stream-${response.connectionId}` });
-                let fullContent = '';
-                
-                // 监听端口消息
-                port.onMessage.addListener((msg) => {
-                    if (msg.error) {
-                        reject(new Error(msg.error));
-                        port.disconnect();
-                        return;
-                    }
-                    
+            const messageId = response.messageId;
+            
+            // 设置消息监听器
+            const messageListener = (msg) => {
+                if (msg.action === 'ollamaResponse' && msg.messageId === messageId) {
                     if (msg.done) {
-                        // 流结束，返回完整响应
-                        resolve({
-                            content: msg.content,
-                            model: msg.model
-                        });
-                        port.disconnect();
+                        // 完成响应
+                        if (!isResolved) {
+                            isResolved = true;
+                            resolve({ content: fullContent });
+                            chrome.runtime.onMessage.removeListener(messageListener);
+                        }
                     } else {
                         // 增量更新
                         fullContent += msg.content;
@@ -55,18 +42,27 @@ export async function sendMessageToOllama(message, history, onUpdate) {
                             onUpdate(msg.content, fullContent);
                         }
                     }
-                });
-                
-                // 监听端口断开
-                port.onDisconnect.addListener(() => {
-                    if (chrome.runtime.lastError) {
-                        reject(new Error(chrome.runtime.lastError.message));
+                } else if (msg.action === 'ollamaError' && msg.messageId === messageId) {
+                    // 错误响应
+                    if (!isResolved) {
+                        isResolved = true;
+                        reject(new Error(msg.error));
+                        chrome.runtime.onMessage.removeListener(messageListener);
                     }
-                });
-            } else {
-                // 非流式响应，直接返回
-                resolve(response);
-            }
+                }
+            };
+            
+            // 添加消息监听器
+            chrome.runtime.onMessage.addListener(messageListener);
+            
+            // 设置超时
+            setTimeout(() => {
+                if (!isResolved) {
+                    isResolved = true;
+                    reject(new Error('Request timed out'));
+                    chrome.runtime.onMessage.removeListener(messageListener);
+                }
+            }, 30000);
         });
     });
 }

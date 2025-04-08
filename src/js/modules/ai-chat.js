@@ -294,26 +294,8 @@ export function loadAIChat(container) {
         });
     }
     
-    // Save current chat
-    async function saveCurrentChat() {
-        // 如果没有聊天内容或没有聊天ID，不保存
-        if (chatHistory.length === 0 || !currentChatId) {
-            console.log('Not saving: empty chat or no chat ID');
-            return;
-        }
-        
-        // 获取现有的聊天历史列表
-        const result = await chrome.storage.local.get(['chatHistoryList']);
-        let chatHistoryList = result.chatHistoryList || [];
-        
-        // 检查此聊天是否已被删除（不在列表中）
-        const chatExists = chatHistoryList.some(chat => chat.id === currentChatId);
-        if (!chatExists && chatHistoryList.length > 0) {
-            // 如果聊天已被删除但我们仍有currentChatId，这可能是在删除后的beforeunload事件中
-            console.log(`Not saving chat ${currentChatId} as it appears to have been deleted`);
-            return;
-        }
-        
+    // 添加 getChatTitle 函数
+    function getChatTitle() {
         // 获取聊天标题（第一条用户消息的前10个字）
         let title = '';
         for (const msg of chatHistory) {
@@ -327,82 +309,120 @@ export function loadAIChat(container) {
             title = t('chat.untitled');
         }
         
-        // 查找现有聊天或创建新聊天
-        const existingChatIndex = chatHistoryList.findIndex(chat => chat.id === currentChatId);
-        
-        if (existingChatIndex !== -1) {
-            // 更新现有聊天
-            chatHistoryList[existingChatIndex] = {
-                ...chatHistoryList[existingChatIndex],
-                title,
-                lastEditTime: Date.now()
-            };
-        } else {
-            // 创建新聊天
-            chatHistoryList.push({
-                id: currentChatId,
-                title,
-                lastEditTime: Date.now()
-            });
+        return title;
+    }
+    
+    // 修改 saveCurrentChat 函数
+    async function saveCurrentChat() {
+        if (!currentChatId) {
+            console.error('Cannot save chat: no currentChatId');
+            return;
         }
         
-        // 保存聊天历史列表
-        await chrome.storage.local.set({ chatHistoryList });
-        
-        // 保存当前聊天内容
-        await chrome.storage.local.set({ [`chat_${currentChatId}`]: chatHistory });
-        
-        // 设置最后活动的聊天ID，用于下次打开时恢复
-        await chrome.storage.local.set({ lastActiveChatId: currentChatId });
-        
-        console.log(`Saved chat ${currentChatId} with ${chatHistory.length} messages`);
+        try {
+            // 获取现有的聊天历史列表
+            const result = await chrome.storage.local.get(['chatHistoryList']);
+            let chatHistoryList = result.chatHistoryList || [];
+            
+            // 查找当前聊天
+            const chatIndex = chatHistoryList.findIndex(chat => chat.id === currentChatId);
+            
+            // 准备要保存的聊天数据
+            const chatData = {
+                id: currentChatId,
+                title: getChatTitle(),
+                messages: chatHistory,
+                lastEditTime: Date.now()
+            };
+            
+            // 如果找到了现有聊天，更新它；否则添加新聊天
+            if (chatIndex !== -1) {
+                chatHistoryList[chatIndex] = chatData;
+            } else {
+                chatHistoryList.push(chatData);
+            }
+            
+            // 保存更新后的聊天历史列表和最后活动的聊天ID
+            await chrome.storage.local.set({
+                chatHistoryList: chatHistoryList,
+                lastActiveChatId: currentChatId
+            });
+            
+            console.log(`Chat ${currentChatId} saved successfully`);
+        } catch (error) {
+            console.error('Error saving chat:', error);
+        }
     }
     
     // Load chat with specified ID
     async function loadChat(chatId) {
-        // Save current chat
-        await saveCurrentChat();
+        console.log(`Loading chat ${chatId}`);
         
-        // Set current chat ID
-        currentChatId = chatId;
-        
-        // Get chat content from storage
-        const result = await chrome.storage.local.get([`chat_${chatId}`]);
-        const loadedChatHistory = result[`chat_${chatId}`] || [];
-        
-        // Clear chat interface
-        chatMessages.innerHTML = '';
-        chatHistory = [];
-        
-        // Load chat content
-        loadedChatHistory.forEach(msg => {
-            addMessageToUI(msg.role, msg.content);
-            chatHistory.push(msg);
-        });
-        
-        // Scroll to bottom
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        try {
+            // 获取聊天历史列表
+            const result = await chrome.storage.local.get(['chatHistoryList']);
+            const chatHistoryList = result.chatHistoryList || [];
+            
+            // 查找指定的聊天
+            const chat = chatHistoryList.find(chat => chat.id === chatId);
+            
+            if (!chat) {
+                console.error(`Chat ${chatId} not found`);
+                return false;
+            }
+            
+            // 清空当前聊天UI
+            chatMessages.innerHTML = '';
+            
+            // 设置当前聊天ID
+            currentChatId = chatId;
+            
+            // 加载聊天消息
+            chatHistory = chat.messages || [];
+            
+            // 显示聊天消息
+            for (const msg of chatHistory) {
+                if (msg.role === 'user' || msg.role === 'assistant') {
+                    addMessageToUI(msg.role, msg.content);
+                }
+            }
+            
+            // 如果没有消息，添加系统消息
+            if (chatHistory.length === 0) {
+                addSystemMessageToUI(t('chat.systemMessage'));
+            }
+            
+            // 更新最后活动的聊天ID
+            await chrome.storage.local.set({ lastActiveChatId: chatId });
+            
+            console.log(`Chat ${chatId} loaded successfully with ${chatHistory.length} messages`);
+            return true;
+        } catch (error) {
+            console.error('Error loading chat:', error);
+            return false;
+        }
     }
     
     // Create new chat
     async function createNewChat() {
-        // 保存当前聊天
-        if (currentChatId && chatHistory.length > 0) {
-            await saveCurrentChat();
-        }
-        
-        // 重置聊天界面
-        chatMessages.innerHTML = '';
+        // 清空聊天历史
         chatHistory = [];
+        
+        // 清空聊天消息UI
+        chatMessages.innerHTML = '';
+        
+        // 生成新的聊天ID
         currentChatId = Date.now().toString();
         
         // 添加系统消息
         addSystemMessageToUI(t('chat.systemMessage'));
         
-        // 立即保存新的空聊天，确保ID被记录
+        console.log(`New chat created with ID: ${currentChatId}`);
+        
+        // 保存新聊天（即使是空的）
         await saveCurrentChat();
         
-        console.log(`Created new chat with ID ${currentChatId}`);
+        return currentChatId;
     }
     
     // Delete chat

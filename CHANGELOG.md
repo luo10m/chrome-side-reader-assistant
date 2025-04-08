@@ -21,6 +21,8 @@
 - Add History Chat
 - Add New Chat
 - Add Load Last Chat Settings
+- Fix Chat History not loading issue
+- Fix Ollama port connection issue
 
 ## v1.0.0
 
