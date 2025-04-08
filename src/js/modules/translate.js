@@ -52,28 +52,32 @@ export function loadTranslate(container) {
                         </div>
                     </div>
                     <div class="translate-row">
-                        <div class="translate-text-area">
-                            <textarea id="source-text" placeholder="Enter text to translate"></textarea>
-                            <div class="translate-actions">
-                                <button id="clear-source" class="icon-button">
+                        <div class="translate-text-container">
+                            <div class="translate-text-area">
+                                <textarea id="source-text" placeholder="Enter text to translate"></textarea>
+                            </div>
+                            <div class="translate-text-actions">
+                                <button id="clear-source" class="icon-button" data-i18n-title="translate.clearSource">
                                     <img src="assets/svg/clear.svg" alt="Clear" class="button-icon">
                                 </button>
-                                <button id="copy-source" class="icon-button">
+                                <button id="copy-source" class="icon-button" data-i18n-title="translate.copySource">
                                     <img src="assets/svg/copy.svg" alt="Copy" class="button-icon">
                                 </button>
                             </div>
                         </div>
                     </div>
                     <div class="translate-row">
-                        <button id="translate-button" class="translate-button">
+                        <button id="translate-button" class="translate-button" data-i18n="translate.translateButton">
                             Translate
                         </button>
                     </div>
                     <div class="translate-row">
-                        <div class="translate-result">
-                            <div id="translation-output"></div>
-                            <div class="translate-actions">
-                                <button id="copy-result" class="icon-button">
+                        <div class="translate-result-container">
+                            <div class="translate-result">
+                                <div id="translation-output"></div>
+                            </div>
+                            <div class="translate-result-actions">
+                                <button id="copy-result" class="icon-button" data-i18n-title="translate.copyResult">
                                     <img src="assets/svg/copy.svg" alt="Copy" class="button-icon">
                                 </button>
                             </div>
@@ -219,11 +223,5 @@ export function loadTranslate(container) {
             .catch(err => {
                 console.error('Failed to copy text:', err);
             });
-    });
-    
-    // Auto-resize textarea
-    sourceText.addEventListener('input', () => {
-        sourceText.style.height = 'auto';
-        sourceText.style.height = sourceText.scrollHeight + 'px';
     });
 } 
