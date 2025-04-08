@@ -11,6 +11,7 @@ const defaultSettings = {
     language: 'en',
     useProxy: false,
     useStreaming: true,
+    loadLastChat: true,
     systemPrompt: 'Act as an expert in [user topic]. Provide a detailed, clear, and helpful response to the following request: [user request or question]. Make sure your explanation is easy to understand and includes examples where relevant. You are a helpful assistant.'
 };
 

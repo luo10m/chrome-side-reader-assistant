@@ -18,6 +18,9 @@
 - Add default settings
 - Add reset settings button to side panel
 - Add Language : Japanese, Korean, French, German
+- Add History Chat
+- Add New Chat
+- Add Load Last Chat Settings
 
 ## v1.0.0
 

@@ -3,6 +3,9 @@ import { t, getCurrentLanguage, loadLanguage, getAvailableLanguages } from '../u
 
 // Load settings
 export async function loadSettings(container) {
+    // 先获取设置，然后再创建 HTML
+    const settings = await getSettings();
+    
     // Get language options
     const languageOptions = await generateLanguageOptions();
     
@@ -27,8 +30,8 @@ export async function loadSettings(container) {
                         <div class="settings-item">
                             <label for="theme-select" data-i18n="settings.sections.appearance.theme.label">Theme</label>
                             <select id="theme-select">
-                                <option value="light" data-i18n="settings.sections.appearance.theme.light">Light</option>
-                                <option value="dark" data-i18n="settings.sections.appearance.theme.dark">Dark</option>
+                                <option value="light" ${settings.theme === 'light' ? 'selected' : ''} data-i18n="settings.sections.appearance.theme.light">Light</option>
+                                <option value="dark" ${settings.theme === 'dark' ? 'selected' : ''} data-i18n="settings.sections.appearance.theme.dark">Dark</option>
                             </select>
                         </div>
                         <div class="settings-item">
@@ -36,6 +39,12 @@ export async function loadSettings(container) {
                             <select id="language-select">
                                 ${languageOptions}
                             </select>
+                        </div>
+                        <div class="settings-item">
+                            <label for="load-last-chat" class="checkbox-label">
+                                <input type="checkbox" id="load-last-chat" ${settings.loadLastChat !== false ? 'checked' : ''}>
+                                <span data-i18n="settings.sections.appearance.loadLastChat">Load last chat on startup</span>
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -147,6 +156,7 @@ export async function loadSettings(container) {
     const useStreamingCheckbox = document.getElementById('use-streaming');
     const systemPromptTextarea = document.getElementById('system-prompt');
     const resetSettingsButton = document.getElementById('reset-settings');
+    const loadLastChatCheckbox = document.getElementById('load-last-chat');
     
     // Set current language
     languageSelect.value = getCurrentLanguage();
@@ -180,6 +190,7 @@ export async function loadSettings(container) {
         themeSelect.value = settings.theme || 'light';
         useProxyCheckbox.checked = settings.useProxy || false;
         useStreamingCheckbox.checked = settings.useStreaming !== false;
+        loadLastChatCheckbox.checked = settings.loadLastChat !== false;
         
         // Build full URL
         const fullUrl = `${ollamaHostInput.value}:${ollamaPortInput.value}${ollamaPathInput.value}`;
@@ -407,6 +418,7 @@ export async function loadSettings(container) {
             language: languageSelect.value,
             useProxy: useProxyCheckbox.checked,
             useStreaming: useStreamingCheckbox.checked,
+            loadLastChat: loadLastChatCheckbox.checked,
             systemPrompt: systemPromptTextarea.value,
         };
         
@@ -462,6 +474,7 @@ export async function loadSettings(container) {
                     languageSelect.value = resetSettings.language || 'en';
                     useProxyCheckbox.checked = resetSettings.useProxy || false;
                     useStreamingCheckbox.checked = resetSettings.useStreaming !== false;
+                    loadLastChatCheckbox.checked = resetSettings.loadLastChat !== false;
                     systemPromptTextarea.value = resetSettings.systemPrompt || '';
                     
                     // 更新模型列表

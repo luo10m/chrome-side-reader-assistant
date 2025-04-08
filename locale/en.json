@@ -12,6 +12,12 @@
     "send": "Send",
     "copy": "Copy",
     "copied": "Copied!",
+    "newChat": "New Chat",
+    "history": "Chat History",
+    "historyTitle": "Chat History",
+    "delete": "Delete",
+    "noHistory": "No chat history",
+    "untitled": "Untitled Chat",
     "systemMessage": "Chat history cleared. Start a new conversation."
   },
   "settings": {
@@ -49,7 +55,8 @@
         },
         "language": {
           "label": "Language"
-        }
+        },
+        "loadLastChat": "Load last chat on startup"
       },
       "systemPrompt": {
         "title": "System Prompt",
