@@ -174,6 +174,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         // 返回 true 表示响应将异步发送
         return true;
+    } else if (request.action === 'fetchTranslation') {
+        fetch(request.url)
+            .then(response => response.text())
+            .then(data => {
+                sendResponse({ data: data });
+            })
+            .catch(error => {
+                console.error('Error fetching translation:', error);
+                sendResponse({ error: error.message });
+            });
+        
+        // 返回 true 表示将异步发送响应
+        return true;
     }
 });
 

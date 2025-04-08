@@ -3,6 +3,7 @@
     "title": "Side-AI",
     "sidebar": {
       "chat": "Chat",
+      "translate": "Translate",
       "settings": "Settings"
     }
   },
@@ -97,5 +98,21 @@
     "confirmations": {
       "reset": "Are you sure you want to reset all settings to default values?"
     }
+  },
+  "translate": {
+    "header": "Translate",
+    "sourceLanguage": "Source Language",
+    "targetLanguage": "Target Language",
+    "enterText": "Enter text to translate",
+    "translateButton": "Translate",
+    "copySource": "Copy Source",
+    "copyResult": "Copy Result",
+    "clearSource": "Clear",
+    "swapLanguages": "Swap Languages",
+    "translating": "Translating...",
+    "translationFailed": "Translation failed",
+    "enterTextPrompt": "Please enter text to translate",
+    "openedInNewTab": "Translation opened in a new tab",
+    "copied": "Copied!"
   }
 } 

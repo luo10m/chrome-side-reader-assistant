@@ -26,6 +26,7 @@
 - Optimize Chat History Logic
 - Optimize Chat Input Logic
 - Optimize Chat Response Logic
+- Add Translate Functionality
 
 
 ## v1.0.0

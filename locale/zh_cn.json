@@ -3,6 +3,7 @@
     "title": "Side-AI",
     "sidebar": {
       "chat": "聊天",
+      "translate": "翻译",
       "settings": "设置"
     }
   },
@@ -97,5 +98,21 @@
       "resetError": "重置设置出错: {error}",
       "resetSuccess": "设置重置成功！"
     }
+  },
+  "translate": {
+    "header": "翻译",
+    "sourceLanguage": "源语言",
+    "targetLanguage": "目标语言",
+    "enterText": "输入要翻译的文本",
+    "translateButton": "翻译",
+    "copySource": "复制源文本",
+    "copyResult": "复制结果",
+    "clearSource": "清除",
+    "swapLanguages": "交换语言",
+    "translating": "翻译中...",
+    "translationFailed": "翻译失败",
+    "enterTextPrompt": "请输入要翻译的文本",
+    "openedInNewTab": "翻译已在新标签页中打开",
+    "copied": "已复制！"
   }
 } 

@@ -1,14 +1,88 @@
 // Import modules
 import { loadAIChat } from './modules/ai-chat.js';
 import { loadSettings } from './modules/settings.js';
+import { loadTranslate } from './modules/translate.js';
+import { loadLanguage, getCurrentLanguage } from './utils/i18n.js';
+import { getSettings } from './services/ollama-service.js';
 import { addCopyListeners } from './utils/copy-utils.js';
 import { initI18n, updateDomTexts } from './utils/i18n.js';
 
 // 全局变量，表示i18n是否已初始化
 let i18nInitialized = false;
 
-// 初始化应用
+// DOM elements
+const aiChatBtn = document.getElementById('ai-chat-btn');
+const translateBtn = document.getElementById('translate-btn');
+const settingsBtn = document.getElementById('settings-btn');
+const aiChatContent = document.getElementById('ai-chat-content');
+const translateContent = document.getElementById('translate-content');
+const settingsContent = document.getElementById('settings-content');
+
+// Load language
 async function init() {
+    try {
+        // Get settings
+        const settings = await getSettings();
+        
+        // Load language
+        await loadLanguage(settings.language || 'en');
+        
+        // Set theme
+        document.documentElement.setAttribute('data-theme', settings.theme || 'light');
+        
+        // Load modules
+        loadAIChat(aiChatContent);
+        loadTranslate(translateContent);
+        loadSettings(settingsContent);
+        
+        // Add event listeners
+        aiChatBtn.addEventListener('click', () => {
+            setActiveTab('ai-chat');
+        });
+        
+        translateBtn.addEventListener('click', () => {
+            setActiveTab('translate');
+        });
+        
+        settingsBtn.addEventListener('click', () => {
+            setActiveTab('settings');
+        });
+        
+        // Set active tab
+        setActiveTab('ai-chat');
+    } catch (error) {
+        console.error('Initialization error:', error);
+    }
+}
+
+// Set active tab
+function setActiveTab(tab) {
+    // Remove active class from all buttons and content sections
+    aiChatBtn.classList.remove('active');
+    translateBtn.classList.remove('active');
+    settingsBtn.classList.remove('active');
+    aiChatContent.classList.remove('active');
+    translateContent.classList.remove('active');
+    settingsContent.classList.remove('active');
+    
+    // Add active class to selected button and content section
+    if (tab === 'ai-chat') {
+        aiChatBtn.classList.add('active');
+        aiChatContent.classList.add('active');
+    } else if (tab === 'translate') {
+        translateBtn.classList.add('active');
+        translateContent.classList.add('active');
+    } else if (tab === 'settings') {
+        settingsBtn.classList.add('active');
+        settingsContent.classList.add('active');
+    }
+}
+
+// Initialize
+init();
+
+// 初始化应用
+async function initApplication() {
     console.log('Starting initialization...');
     
     // 确保DOM已加载
@@ -91,7 +165,7 @@ function initUI() {
 }
 
 // 启动应用
-init().then(() => {
+initApplication().then(() => {
     console.log('Initialization complete');
 });
 
