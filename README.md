@@ -52,6 +52,7 @@ A powerful Chrome extension that provides a side panel interface to interact wit
 
 - Chrome browser (version 116 or later)
 - Ollama running locally or on a remote server (for AI chat functionality)
+- OpenAI API key (for AI chat functionality)
 
 ## 📦 Installation
 
@@ -84,7 +85,7 @@ A powerful Chrome extension that provides a side panel interface to interact wit
 ## 🛠️ Technologies
 
 - **Frontend**: HTML5, CSS3, JavaScript (ES6+)
-- **AI Integration**: Ollama API
+- **AI Integration**: Ollama API and OpenAI API , etc. (for AI chat functionality) 
 - **Translation**: Google Translate API
 - **Storage**: Chrome Storage API
 - **UI Framework**: Custom lightweight components
