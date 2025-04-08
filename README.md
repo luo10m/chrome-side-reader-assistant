@@ -12,15 +12,18 @@ A powerful Chrome extension that provides a side panel interface to interact wit
 
 </div>
 
+<div align="center">
 
 <table>
 <tr>
 <td>
-<img src="images/product_2025-04-08_13-07-54.png" alt="Logo" width="324" >
+<img src="images/product_2025-04-08_13-07-54.png" alt="Logo" width="124" >
 </td>
 <td>
-<img src="images/product_2025-04-08_13-08-47.png" alt="Logo" width="324" >
+<img src="images/product_2025-04-08_13-08-47.png" alt="Logo" width="124" >
 </td>
+</table>
+<table>
 <td>
 <img src="images/product_2025-04-08_13-08-36.png" alt="Logo" width="324" >
 </td>
@@ -30,9 +33,10 @@ A powerful Chrome extension that provides a side panel interface to interact wit
 <td>
 <img src="images/product_2025-04-08_13-08-47.png" alt="Logo" width="324" >
 </td>
-
 </tr>
 </table>
+
+</div>
 
 ## ✨ Features
 
