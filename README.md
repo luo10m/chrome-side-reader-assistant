@@ -17,10 +17,10 @@ A powerful Chrome extension that provides a side panel interface to interact wit
 <table>
 <tr>
 <td>
-<img src="images/product_2025-04-08_13-07-54.png" alt="Logo" width="124" >
+<img src="images/product_2025-04-08_13-07-15.png" alt="Logo" width="224" >
 </td>
 <td>
-<img src="images/product_2025-04-08_13-08-47.png" alt="Logo" width="124" >
+<img src="images/product_2025-04-08_13-07-54.png" alt="Logo" width="224" >
 </td>
 </table>
 <table>
