@@ -24,6 +24,9 @@
 - Fix Chat History not loading issue
 - Fix Ollama port connection issue
 - Optimize Chat History Logic
+- Optimize Chat Input Logic
+- Optimize Chat Response Logic
+
 
 ## v1.0.0
 

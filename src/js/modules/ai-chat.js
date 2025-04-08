@@ -11,6 +11,9 @@ export function loadAIChat(container) {
     // Current chat ID
     let currentChatId = null;
     
+    // 在文件顶部添加变量
+    let isGenerating = false; // 标记 AI 是否正在生成回复
+    
     // Create chat UI
     container.innerHTML = `
         <div class="chat-container">
@@ -116,6 +119,12 @@ export function loadAIChat(container) {
         
         if (!message) return;
         
+        // 如果 AI 正在生成回复，不允许发送新消息
+        if (isGenerating) {
+            console.log('AI is still generating a response, please wait');
+            return;
+        }
+        
         // 只清空输入内容，让 CSS 自动处理高度
         chatInput.value = '';
         
@@ -155,6 +164,10 @@ export function loadAIChat(container) {
         // 重置代码块跟踪
         codeBlocks.clear();
         
+        // 设置生成状态为 true，并禁用输入
+        isGenerating = true;
+        updateInputState();
+        
         try {
             // Send message to Ollama
             const response = await sendMessageToOllama(message, chatHistory, (chunk, fullText) => {
@@ -192,6 +205,15 @@ export function loadAIChat(container) {
             assistantContent.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
             
             console.error('Error sending message:', error);
+        } finally {
+            // 无论成功还是失败，都重置生成状态并启用输入
+            isGenerating = false;
+            updateInputState();
+            
+            // 自动聚焦回输入框
+            setTimeout(() => {
+                chatInput.focus();
+            }, 100); // 短暂延迟确保 UI 已更新
         }
     }
     
@@ -603,4 +625,20 @@ export function loadAIChat(container) {
             e.stopPropagation();
         }
     });
+
+    // 添加更新输入状态的函数
+    function updateInputState() {
+        // 根据 isGenerating 状态禁用或启用输入框和发送按钮
+        chatInput.disabled = isGenerating;
+        sendButton.disabled = isGenerating;
+        
+        // 可选：添加视觉提示
+        if (isGenerating) {
+            chatInput.classList.add('disabled');
+            sendButton.classList.add('disabled');
+        } else {
+            chatInput.classList.remove('disabled');
+            sendButton.classList.remove('disabled');
+        }
+    }
 } 

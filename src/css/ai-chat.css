@@ -779,4 +779,16 @@ code {
     border-radius: 8px;
     max-width: 80%;
     font-size: 13px;
+}
+
+/* 添加禁用状态的样式 */
+.chat-input-container textarea.disabled {
+    background-color: #f0f0f0;
+    color: #888;
+    cursor: not-allowed;
+}
+
+.chat-input-container button.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 } 
