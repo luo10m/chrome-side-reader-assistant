@@ -319,6 +319,12 @@ export function loadAIChat(container) {
             return;
         }
         
+        // 如果聊天历史为空，不保存到历史列表中
+        if (chatHistory.length === 0) {
+            console.log('Not saving empty chat to history list');
+            return;
+        }
+        
         try {
             // 获取现有的聊天历史列表
             const result = await chrome.storage.local.get(['chatHistoryList']);
@@ -339,7 +345,15 @@ export function loadAIChat(container) {
             if (chatIndex !== -1) {
                 chatHistoryList[chatIndex] = chatData;
             } else {
-                chatHistoryList.push(chatData);
+                // 只有当聊天中有用户消息时才添加到历史列表
+                const hasUserMessage = chatHistory.some(msg => msg.role === 'user');
+                if (hasUserMessage) {
+                    chatHistoryList.push(chatData);
+                    console.log(`Added new chat ${currentChatId} to history list`);
+                } else {
+                    console.log(`Not adding chat ${currentChatId} to history list (no user messages)`);
+                    return; // 不保存没有用户消息的聊天
+                }
             }
             
             // 保存更新后的聊天历史列表和最后活动的聊天ID
@@ -403,7 +417,7 @@ export function loadAIChat(container) {
         }
     }
     
-    // Create new chat
+    // 修改 createNewChat 函数
     async function createNewChat() {
         // 清空聊天历史
         chatHistory = [];
@@ -419,8 +433,8 @@ export function loadAIChat(container) {
         
         console.log(`New chat created with ID: ${currentChatId}`);
         
-        // 保存新聊天（即使是空的）
-        await saveCurrentChat();
+        // 注意：不再保存空聊天
+        // 只有当用户发送第一条消息时才会保存
         
         return currentChatId;
     }

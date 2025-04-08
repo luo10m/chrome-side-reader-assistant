@@ -23,6 +23,7 @@
 - Add Load Last Chat Settings
 - Fix Chat History not loading issue
 - Fix Ollama port connection issue
+- Optimize Chat History Logic
 
 ## v1.0.0
 
