@@ -63,6 +63,13 @@
         "label": "System Prompt",
         "placeholder": "Enter system prompt here...",
         "help": "The system prompt is sent to the AI at the beginning of each conversation to set the context and behavior."
+      },
+      "defaultAI": {
+        "title": "AI Settings",
+        "label": "Default AI Provider",
+        "options": {
+          "ollama": "Ollama"
+        }
       }
     },
     "buttons": {

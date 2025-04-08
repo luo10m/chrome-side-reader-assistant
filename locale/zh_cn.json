@@ -63,6 +63,13 @@
         "label": "系统提示",
         "placeholder": "在此输入系统提示...",
         "help": "系统提示在每次对话开始时发送给 AI 以设置上下文和行为。"
+      },
+      "defaultAI": {
+        "title": "AI 设置",
+        "label": "默认 AI 提供商",
+        "options": {
+          "ollama": "Ollama"
+        }
       }
     },
     "buttons": {

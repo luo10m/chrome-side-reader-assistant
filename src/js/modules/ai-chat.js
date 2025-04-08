@@ -1,5 +1,5 @@
 // Import the API service and markdown renderer
-import { sendMessageToOllama } from '../services/ollama-service.js';
+import { sendMessageToOllama, getSettings } from '../services/ollama-service.js';
 import { renderMarkdown } from '../utils/markdown-renderer.js';
 import { t } from '../utils/i18n.js';
 
@@ -169,19 +169,30 @@ export function loadAIChat(container) {
         updateInputState();
         
         try {
-            // Send message to Ollama
-            const response = await sendMessageToOllama(message, chatHistory, (chunk, fullText) => {
-                // Remove typing indicator
-                if (assistantContent.contains(typingIndicator)) {
-                    assistantContent.removeChild(typingIndicator);
-                }
-                
-                // 使用增量更新方法处理内容
-                updateStreamingContent(assistantContent, fullText);
-                
-                // Scroll to bottom
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-            });
+            // 获取当前设置
+            const settings = await getSettings();
+            
+            // 根据默认 AI 提供商选择不同的 API
+            let response;
+            
+            if (settings.defaultAI === 'ollama') {
+                // 使用 Ollama API
+                response = await sendMessageToOllama(message, chatHistory, (chunk, fullText) => {
+                    // Remove typing indicator
+                    if (assistantContent.contains(typingIndicator)) {
+                        assistantContent.removeChild(typingIndicator);
+                    }
+                    
+                    // 使用增量更新方法处理内容
+                    updateStreamingContent(assistantContent, fullText);
+                    
+                    // Scroll to bottom
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                });
+            } else {
+                // 未来可以添加其他 AI 提供商
+                throw new Error(`Unsupported AI provider: ${settings.defaultAI}`);
+            }
             
             // Add assistant message to chat history
             chatHistory.push({

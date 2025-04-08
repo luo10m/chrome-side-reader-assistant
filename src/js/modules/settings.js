@@ -28,21 +28,34 @@ export async function loadSettings(container) {
                     <div class="settings-section">
                         <h3 data-i18n="settings.sections.appearance.title">Appearance</h3>
                         <div class="settings-item">
-                            <label for="theme-select" data-i18n="settings.sections.appearance.theme.label">Theme</label>
-                            <select id="theme-select">
-                                <option value="light" ${settings.theme === 'light' ? 'selected' : ''} data-i18n="settings.sections.appearance.theme.light">Light</option>
-                                <option value="dark" ${settings.theme === 'dark' ? 'selected' : ''} data-i18n="settings.sections.appearance.theme.dark">Dark</option>
-                            </select>
+                            <label data-i18n="settings.sections.appearance.theme.label">Theme</label>
+                            <div class="settings-control">
+                                <select id="theme-select">
+                                    <option value="light" data-i18n="settings.sections.appearance.theme.light">Light</option>
+                                    <option value="dark" data-i18n="settings.sections.appearance.theme.dark">Dark</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="settings-item">
-                            <label for="language-select" data-i18n="settings.sections.appearance.language.label">Language</label>
-                            <select id="language-select">
-                                ${languageOptions}
-                            </select>
+                            <label data-i18n="settings.sections.appearance.language.label">Language</label>
+                            <div class="settings-control">
+                                <select id="language-select">
+                                    <option value="en">English</option>
+                                    <option value="zh_cn">简体中文</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="settings-item">
-                            <label for="load-last-chat" class="checkbox-label">
-                                <input type="checkbox" id="load-last-chat" ${settings.loadLastChat !== false ? 'checked' : ''}>
+                            <label data-i18n="settings.sections.defaultAI.label">Default AI</label>
+                            <div class="settings-control">
+                                <select id="default-ai-select">
+                                    <option value="ollama">Ollama</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="settings-item checkbox-item">
+                            <label>
+                                <input type="checkbox" id="load-last-chat-checkbox">
                                 <span data-i18n="settings.sections.appearance.loadLastChat">Load last chat on startup</span>
                             </label>
                         </div>
@@ -156,7 +169,7 @@ export async function loadSettings(container) {
     const useStreamingCheckbox = document.getElementById('use-streaming');
     const systemPromptTextarea = document.getElementById('system-prompt');
     const resetSettingsButton = document.getElementById('reset-settings');
-    const loadLastChatCheckbox = document.getElementById('load-last-chat');
+    const loadLastChatCheckbox = document.getElementById('load-last-chat-checkbox');
     
     // Set current language
     languageSelect.value = getCurrentLanguage();
@@ -200,6 +213,9 @@ export async function loadSettings(container) {
         
         // Set system prompt
         systemPromptTextarea.value = settings.systemPrompt || '';
+        
+        // Set default AI
+        document.getElementById('default-ai-select').value = settings.defaultAI || 'ollama';
     });
     
     // When URL parts change, refresh model list
@@ -420,6 +436,7 @@ export async function loadSettings(container) {
             useStreaming: useStreamingCheckbox.checked,
             loadLastChat: loadLastChatCheckbox.checked,
             systemPrompt: systemPromptTextarea.value,
+            defaultAI: document.getElementById('default-ai-select').value,
         };
         
         try {

@@ -9,6 +9,7 @@ const defaultSettings = {
     ollamaModel: 'qwen2.5:7b',
     theme: 'light',
     language: 'en',
+    defaultAI: 'ollama',
     useProxy: false,
     useStreaming: true,
     loadLastChat: true,
