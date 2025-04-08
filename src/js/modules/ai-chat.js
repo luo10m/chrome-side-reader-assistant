@@ -108,53 +108,27 @@ export function loadAIChat(container) {
     let streamingMessageElement = null;
     let codeBlocks = new Map(); // 用于跟踪代码块
     
-    // 在获取DOM元素后添加
-    chatInput.style.height = 'auto'; // 重置高度
-    chatInput.style.height = (chatInput.scrollHeight) + 'px'; // 设置为内容高度
     
-    // 修改输入事件处理函数
-    chatInput.addEventListener('input', () => {
-        // 先将高度设为自动，以便正确计算scrollHeight
-        chatInput.style.height = 'auto';
-        
-        // 设置最小高度（一行文本的高度）
-        const minHeight = 24; // 根据您的CSS调整这个值
-        
-        // 计算新高度，确保至少有minHeight
-        const newHeight = Math.max(chatInput.scrollHeight, minHeight);
-        
-        // 应用新高度
-        chatInput.style.height = newHeight + 'px';
-        
-        console.log(`Input height adjusted: scrollHeight=${chatInput.scrollHeight}, newHeight=${newHeight}`);
-    });
-    
-    // 添加一个函数来重置输入框高度
-    function resetInputHeight() {
-        chatInput.value = '';
-        chatInput.style.height = 'auto';
-        const minHeight = 24; // 与上面相同
-        chatInput.style.height = minHeight + 'px';
-    }
+    // 简化输入事件处理
     
     async function sendMessage() {
         const message = chatInput.value.trim();
         
         if (!message) return;
         
-        // 清空输入并重置高度
-        resetInputHeight();
+        // 只清空输入内容，让 CSS 自动处理高度
+        chatInput.value = '';
         
-        // Add user message to UI
+        // 添加用户消息到UI
         addMessageToUI('user', message);
         
-        // Add user message to chat history
+        // 添加到聊天历史
         chatHistory.push({
             role: 'user',
             content: message
         });
         
-        // Save current chat
+        // 保存当前聊天
         await saveCurrentChat();
         
         // Create assistant message element
