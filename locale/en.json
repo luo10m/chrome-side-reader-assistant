@@ -26,6 +26,7 @@
     "tabs": {
       "general": "General",
       "ollama": "Ollama",
+      "openai": "OpenAI",
       "systemPrompt": "System Prompt"
     },
     "sections": {
@@ -69,7 +70,26 @@
         "title": "AI Settings",
         "label": "Default AI Provider",
         "options": {
-          "ollama": "Ollama"
+          "ollama": "Ollama",
+          "openai": "OpenAI"
+        }
+      },
+      "openai": {
+        "title": "OpenAI Settings",
+        "apiKey": {
+          "label": "API Key",
+          "error": "API key is required"
+        },
+        "baseUrl": {
+          "label": "Base URL (Optional)",
+          "help": "Leave empty to use the default OpenAI API endpoint"
+        },
+        "model": {
+          "label": "Model",
+          "placeholder": "Select a model",
+          "loading": "Loading models...",
+          "empty": "No models found",
+          "error": "Error loading models"
         }
       }
     },

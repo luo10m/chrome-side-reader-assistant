@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v1.0.2
+- Add OpenAI API support
+- Add OpenAI API key to settings
+- Fix OpenAI API error handling
+
 ## v1.0.1
 
 - Fix markdown rendering issue

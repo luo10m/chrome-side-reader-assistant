@@ -175,8 +175,161 @@ export function loadAIChat(container) {
             // 根据默认 AI 提供商选择不同的 API
             let response;
             
-            if (settings.defaultAI === 'ollama') {
-                // 使用 Ollama API
+            if (settings.defaultAI === 'openai') {
+                // 导入 OpenAI 服务
+                const { sendMessageToOpenAI, parseOpenAIStreamingResponse } = await import('../services/openai-service.js');
+                
+                // 使用 OpenAI API
+                response = await sendMessageToOpenAI(message, chatHistory, settings.systemPrompt);
+                
+                // 处理流式响应
+                if (response.streaming) {
+                    const { reader, decoder } = response;
+                    let fullText = '';
+                    let buffer = '';
+                    
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        
+                        if (done) {
+                            break;
+                        }
+                        
+                        // 解码数据块
+                        const chunk = decoder.decode(value, { stream: true });
+                        buffer += chunk;
+                        
+                        // 处理完整的数据行
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop(); // 保留最后一个可能不完整的行
+                        
+                        for (const line of lines) {
+                            if (line.trim()) {
+                                const parsed = parseOpenAIStreamingResponse(line);
+                                
+                                if (!parsed.done && parsed.content) {
+                                    fullText += parsed.content;
+                                    
+                                    // 直接更新 streamingMessageElement 而不是调用 updateAssistantMessage
+                                    if (streamingMessageElement) {
+                                        // 移除打字指示器
+                                        const typingIndicator = streamingMessageElement.querySelector('.typing-indicator');
+                                        if (typingIndicator) {
+                                            typingIndicator.remove();
+                                        }
+                                        
+                                        // 更新内容
+                                        streamingMessageElement.innerHTML = renderMarkdown(fullText);
+                                        
+                                        // 应用代码高亮
+                                        if (typeof hljs !== 'undefined') {
+                                            try {
+                                                streamingMessageElement.querySelectorAll('pre code').forEach((block) => {
+                                                    try {
+                                                        hljs.highlightElement(block);
+                                                    } catch (e) {
+                                                        console.debug('Error highlighting code block:', e);
+                                                    }
+                                                });
+                                            } catch (e) {
+                                                console.debug('Error during code highlighting:', e);
+                                            }
+                                        }
+                                        
+                                        // 滚动到底部
+                                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // 处理最后一个缓冲区
+                    if (buffer.trim()) {
+                        const parsed = parseOpenAIStreamingResponse(buffer);
+                        if (!parsed.done && parsed.content) {
+                            fullText += parsed.content;
+                            
+                            // 直接更新 streamingMessageElement
+                            if (streamingMessageElement) {
+                                streamingMessageElement.innerHTML = renderMarkdown(fullText);
+                                
+                                // 应用代码高亮
+                                if (typeof hljs !== 'undefined') {
+                                    try {
+                                        streamingMessageElement.querySelectorAll('pre code').forEach((block) => {
+                                            try {
+                                                hljs.highlightElement(block);
+                                            } catch (e) {
+                                                console.debug('Error highlighting code block:', e);
+                                            }
+                                        });
+                                    } catch (e) {
+                                        console.debug('Error during code highlighting:', e);
+                                    }
+                                }
+                                
+                                // 滚动到底部
+                                chatMessages.scrollTop = chatMessages.scrollHeight;
+                            }
+                        }
+                    }
+                    
+                    // 添加到聊天历史
+                    chatHistory.push({
+                        role: 'assistant',
+                        content: fullText
+                    });
+                    
+                    // 保存聊天历史
+                    await saveCurrentChat();
+                } else {
+                    // 处理非流式响应
+                    // 直接更新 streamingMessageElement
+                    if (streamingMessageElement) {
+                        // 移除打字指示器
+                        const typingIndicator = streamingMessageElement.querySelector('.typing-indicator');
+                        if (typingIndicator) {
+                            typingIndicator.remove();
+                        }
+                        
+                        // 更新内容
+                        streamingMessageElement.innerHTML = renderMarkdown(response.fullResponse);
+                        
+                        // 应用代码高亮
+                        if (typeof hljs !== 'undefined') {
+                            try {
+                                streamingMessageElement.querySelectorAll('pre code').forEach((block) => {
+                                    try {
+                                        hljs.highlightElement(block);
+                                    } catch (e) {
+                                        console.debug('Error highlighting code block:', e);
+                                    }
+                                });
+                            } catch (e) {
+                                console.debug('Error during code highlighting:', e);
+                            }
+                        }
+                        
+                        // 滚动到底部
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    }
+                    
+                    // 添加到聊天历史
+                    chatHistory.push({
+                        role: 'assistant',
+                        content: response.fullResponse
+                    });
+                    
+                    // 保存聊天历史
+                    await saveCurrentChat();
+                }
+                
+                // 重置生成状态
+                isGenerating = false;
+                updateInputState();
+            } else {
+                // 默认使用 Ollama API
                 response = await sendMessageToOllama(message, chatHistory, (chunk, fullText) => {
                     // Remove typing indicator
                     if (assistantContent.contains(typingIndicator)) {
@@ -189,16 +342,7 @@ export function loadAIChat(container) {
                     // Scroll to bottom
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 });
-            } else {
-                // 未来可以添加其他 AI 提供商
-                throw new Error(`Unsupported AI provider: ${settings.defaultAI}`);
             }
-            
-            // Add assistant message to chat history
-            chatHistory.push({
-                role: 'assistant',
-                content: response.content
-            });
             
             // Reset streaming message element
             streamingMessageElement = null;

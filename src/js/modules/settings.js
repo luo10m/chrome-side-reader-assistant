@@ -19,6 +19,7 @@ export async function loadSettings(container) {
             <div class="settings-tabs">
                 <button class="tab-button active" data-tab="general" data-i18n="settings.tabs.general">General</button>
                 <button class="tab-button" data-tab="ollama" data-i18n="settings.tabs.ollama">Ollama</button>
+                <button class="tab-button" data-tab="openai" data-i18n="settings.tabs.openai">OpenAI</button>
                 <button class="tab-button" data-tab="system-prompt" data-i18n="settings.tabs.systemPrompt">System Prompt</button>
             </div>
             
@@ -46,11 +47,15 @@ export async function loadSettings(container) {
                             </div>
                         </div>
                         <div class="settings-item">
-                            <label data-i18n="settings.sections.defaultAI.label">Default AI</label>
-                            <div class="settings-control">
-                                <select id="default-ai-select">
-                                    <option value="ollama">Ollama</option>
-                                </select>
+                            <h3 data-i18n="settings.sections.defaultAI.title">AI Settings</h3>
+                            <div class="settings-item">
+                                <label for="default-ai-select" data-i18n="settings.sections.defaultAI.label">Default AI Provider</label>
+                                <div class="settings-control">
+                                    <select id="default-ai-select">
+                                        <option value="ollama" ${settings.defaultAI === 'ollama' ? 'selected' : ''} data-i18n="settings.sections.defaultAI.options.ollama">Ollama</option>
+                                        <option value="openai" ${settings.defaultAI === 'openai' ? 'selected' : ''} data-i18n="settings.sections.defaultAI.options.openai">OpenAI</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
                         <div class="settings-item checkbox-item">
@@ -112,6 +117,47 @@ export async function loadSettings(container) {
                     </div>
                 </div>
                 
+                <!-- OpenAI Tab -->
+                <div class="tab-content" id="openai-tab">
+                    <div class="settings-section">
+                        <h3 data-i18n="settings.sections.openai.title">OpenAI Settings</h3>
+                        
+                        <div class="settings-item">
+                            <label for="openai-api-key" data-i18n="settings.sections.openai.apiKey.label">API Key</label>
+                            <div class="settings-control">
+                                <input type="text" id="openai-api-key" placeholder="sk-..." value="${settings.openaiApiKey || ''}">
+                            </div>
+                        </div>
+                        
+                        <div class="settings-item">
+                            <label for="openai-base-url" data-i18n="settings.sections.openai.baseUrl.label">Base URL (Optional)</label>
+                            <div class="settings-control">
+                                <input type="text" id="openai-base-url" placeholder="https://api.openai.com/v1" value="${settings.openaiBaseUrl || ''}">
+                            </div>
+                        </div>
+                        
+                        <div class="settings-item">
+                            <label for="openai-model-select" data-i18n="settings.sections.openai.model.label">Model</label>
+                            <div class="model-select-container">
+                                <select id="openai-model-select">
+                                    <option value="" data-i18n="settings.sections.openai.model.placeholder">Select a model</option>
+                                    <option value="gpt-3.5-turbo" ${settings.openaiModel === 'gpt-3.5-turbo' ? 'selected' : ''}>GPT-3.5 Turbo</option>
+                                    <option value="gpt-4" ${settings.openaiModel === 'gpt-4' ? 'selected' : ''}>GPT-4</option>
+                                    <option value="gpt-4-turbo" ${settings.openaiModel === 'gpt-4-turbo' ? 'selected' : ''}>GPT-4 Turbo</option>
+                                </select>
+                                <button id="refresh-openai-models" class="icon-button" data-i18n-title="settings.buttons.refresh">
+                                    <img src="assets/svg/refresh.svg" alt="Refresh" class="button-icon">
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="settings-item">
+                            <button id="test-openai-connection" class="settings-button" data-i18n="settings.buttons.testConnection">Test Connection</button>
+                            <div id="openai-connection-status" class="settings-status"></div>
+                        </div>
+                    </div>
+                </div>
+                
                 <!-- System Prompt Tab -->
                 <div class="tab-content" id="system-prompt-tab">
                     <div class="settings-section">
@@ -142,14 +188,15 @@ export async function loadSettings(container) {
     
     tabButtons.forEach(button => {
         button.addEventListener('click', () => {
+            const tabId = button.getAttribute('data-tab');
+            
             // 移除所有选项卡的活动状态
             tabButtons.forEach(btn => btn.classList.remove('active'));
-            tabContents.forEach(content => content.classList.remove('active'));
+            tabContents.forEach(content => content.style.display = 'none');
             
             // 激活当前选项卡
             button.classList.add('active');
-            const tabId = button.getAttribute('data-tab');
-            document.getElementById(`${tabId}-tab`).classList.add('active');
+            document.getElementById(`${tabId}-tab`).style.display = 'block';
         });
     });
     
@@ -170,6 +217,7 @@ export async function loadSettings(container) {
     const systemPromptTextarea = document.getElementById('system-prompt');
     const resetSettingsButton = document.getElementById('reset-settings');
     const loadLastChatCheckbox = document.getElementById('load-last-chat-checkbox');
+    const defaultAI = document.getElementById('default-ai-select');
     
     // Set current language
     languageSelect.value = getCurrentLanguage();
@@ -437,6 +485,9 @@ export async function loadSettings(container) {
             loadLastChat: loadLastChatCheckbox.checked,
             systemPrompt: systemPromptTextarea.value,
             defaultAI: document.getElementById('default-ai-select').value,
+            openaiApiKey: document.getElementById('openai-api-key').value.trim(),
+            openaiBaseUrl: document.getElementById('openai-base-url').value.trim(),
+            openaiModel: document.getElementById('openai-model-select').value,
         };
         
         try {
@@ -493,7 +544,11 @@ export async function loadSettings(container) {
                     useStreamingCheckbox.checked = resetSettings.useStreaming !== false;
                     loadLastChatCheckbox.checked = resetSettings.loadLastChat !== false;
                     systemPromptTextarea.value = resetSettings.systemPrompt || '';
-                    
+                    defaultAI.value = resetSettings.defaultAI || 'ollama';
+                    openaiApiKey.value = resetSettings.openaiApiKey || '';
+                    openaiBaseUrl.value = resetSettings.openaiBaseUrl || 'https://api.openai.com/v1';
+                    openaiModelSelect.value = resetSettings.openaiModel || 'gpt-3.5-turbo';
+
                     // 更新模型列表
                     const fullUrl = `${ollamaHostInput.value}:${ollamaPortInput.value}${ollamaPathInput.value}`;
                     fetchModelList(fullUrl, useProxyCheckbox.checked, resetSettings.ollamaModel);
@@ -544,6 +599,84 @@ export async function loadSettings(container) {
             resetIcon.src = 'assets/svg/reset.svg';
         }
     }
+
+    // 获取 OpenAI 相关元素
+    const openaiTab = document.getElementById('openai-tab');
+    const openaiSection = document.getElementById('openai-section');
+    const openaiApiKey = document.getElementById('openai-api-key');
+    const openaiBaseUrl = document.getElementById('openai-base-url');
+    const openaiModelSelect = document.getElementById('openai-model-select');
+    const refreshOpenAIModels = document.getElementById('refresh-openai-models');
+    const testOpenAIConnection = document.getElementById('test-openai-connection');
+    const openaiConnectionStatus = document.getElementById('openai-connection-status');
+    
+    // 刷新 OpenAI 模型列表
+    refreshOpenAIModels.addEventListener('click', async () => {
+        const apiKey = openaiApiKey.value.trim();
+        const baseUrl = openaiBaseUrl.value.trim();
+        
+        if (!apiKey) {
+            openaiConnectionStatus.innerHTML = `<span class="error">${t('settings.sections.openai.model.error')}</span>`;
+            return;
+        }
+        
+        try {
+            openaiConnectionStatus.innerHTML = `<span class="loading">${t('settings.sections.openai.model.loading')}</span>`;
+            
+            // 导入 getOpenAIModels 函数
+            const { getOpenAIModels } = await import('../services/openai-service.js');
+            
+            // 获取模型列表
+            const models = await getOpenAIModels(apiKey, baseUrl);
+            
+            // 清空现有选项
+            openaiModelSelect.innerHTML = `<option value="" data-i18n="settings.sections.openai.model.placeholder">Select a model</option>`;
+            
+            // 添加模型选项
+            models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = model.name;
+                
+                if (settings.openaiModel === model.id) {
+                    option.selected = true;
+                }
+                
+                openaiModelSelect.appendChild(option);
+            });
+            
+            openaiConnectionStatus.innerHTML = '';
+        } catch (error) {
+            console.error('Error fetching OpenAI models:', error);
+            openaiConnectionStatus.innerHTML = `<span class="error">${t('settings.sections.openai.model.error')}: ${error.message}</span>`;
+        }
+    });
+    
+    // 测试 OpenAI 连接
+    testOpenAIConnection.addEventListener('click', async () => {
+        const apiKey = openaiApiKey.value.trim();
+        const baseUrl = openaiBaseUrl.value.trim();
+        
+        if (!apiKey) {
+            openaiConnectionStatus.innerHTML = `<span class="error">${t('settings.sections.openai.apiKey.error')}</span>`;
+            return;
+        }
+        
+        try {
+            openaiConnectionStatus.innerHTML = `<span class="loading">${t('settings.status.testing')}</span>`;
+            
+            // 导入 testOpenAIConnection 函数
+            const { testOpenAIConnection } = await import('../services/openai-service.js');
+            
+            // 测试连接
+            const result = await testOpenAIConnection(apiKey, baseUrl);
+            
+            openaiConnectionStatus.innerHTML = `<span class="success">${t('settings.status.success').replace('{version}', 'OpenAI')}</span>`;
+        } catch (error) {
+            console.error('Error testing OpenAI connection:', error);
+            openaiConnectionStatus.innerHTML = `<span class="error">${t('settings.status.error').replace('{error}', error.message)}</span>`;
+        }
+    });
 }
 
 // Update code highlight theme

@@ -26,6 +26,7 @@
     "tabs": {
       "general": "通用",
       "ollama": "Ollama",
+      "openai": "OpenAI",
       "systemPrompt": "系统提示"
     },
     "sections": {
@@ -69,7 +70,26 @@
         "title": "AI 设置",
         "label": "默认 AI 提供商",
         "options": {
-          "ollama": "Ollama"
+          "ollama": "Ollama",
+          "openai": "OpenAI"
+        }
+      },
+      "openai": {
+        "title": "OpenAI 设置",
+        "apiKey": {
+          "label": "API 密钥",
+          "error": "API 密钥是必需的"
+        },
+        "baseUrl": {
+          "label": "基础 URL (可选)",
+          "help": "留空以使用默认的 OpenAI API 端点"
+        },
+        "model": {
+          "label": "模型",
+          "placeholder": "选择一个模型",
+          "loading": "加载模型中...",
+          "empty": "未找到模型",
+          "error": "加载模型出错"
         }
       }
     },
