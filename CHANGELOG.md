@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v1.0.5
+- Fix Chat Input Focus Issue
+- Fix Chat History not loading issue
+
 ## v1.0.4
 - Fix OpenAI API error handling
 - Add Regenerate button to assistant messages

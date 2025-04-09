@@ -741,6 +741,7 @@ export function loadAIChat(container) {
         } else {
             chatInput.classList.remove('disabled');
             sendButton.classList.remove('disabled');
+            chatInput.focus();
         }
     }
 
