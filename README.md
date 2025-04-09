@@ -6,35 +6,22 @@
 
 A powerful Chrome extension that provides a side panel interface to interact with AI services.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg?cacheSeconds=2592000)
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+[![Release](https://img.shields.io/github/v/release/yeongpin/chrome-side-ai-panel?style=flat-square&logo=github&color=blue)](https://github.com/yeongpin/chrome-side-ai-panel/releases/latest)
+[![Stars](https://img.shields.io/github/stars/yeongpin/chrome-side-ai-panel?style=flat-square&logo=github)](https://github.com/yeongpin/chrome-side-ai-panel/stargazers)
+[![Download](https://img.shields.io/github/downloads/yeongpin/chrome-side-ai-panel/total?style=flat-square&logo=github&color=52c41a1)](https://github.com/yeongpin/chrome-side-ai-panel/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Chrome](https://img.shields.io/badge/Chrome-v116+-green.svg)
 
 </div>
 
 <div align="center">
 
-<table>
-<tr>
-<td>
-<img src="images/product_2025-04-08_13-07-15.png" alt="Logo" width="224" >
-</td>
-<td>
-<img src="images/product_2025-04-08_13-07-54.png" alt="Logo" width="224" >
-</td>
-</table>
-<table>
-<td>
-<img src="images/product_2025-04-08_13-08-36.png" alt="Logo" width="324" >
-</td>
-<td>
-<img src="images/product_2025-04-08_13-08-42.png" alt="Logo" width="324" >
-</td>
-<td>
-<img src="images/product_2025-04-08_13-08-47.png" alt="Logo" width="324" >
-</td>
-</tr>
-</table>
+<img src="images/ai-chat-0409.png" alt="product-1" width="824" >
+
+<details>
+<summary>Click to view other types of the image</summary>
+<img src="images/translate-0409.png" alt="product-2" width="824" >
+</details>
 
 </div>
 
@@ -93,7 +80,7 @@ A powerful Chrome extension that provides a side panel interface to interact wit
 
 ## 📄 License
 
-MIT
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 
 <div align="center">
