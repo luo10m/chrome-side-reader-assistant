@@ -1,16 +1,16 @@
 name: Build and Release Extension
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'manifest.json'
-      - 'src/**'
-      - 'assets/**'
-      - 'chrome/**'
-      - 'locale/**'
-      - 'CHANGELOG.md'
+  #push:
+  #  branches:
+  #    - main
+  #  paths:
+  #    - 'manifest.json'
+  #    - 'src/**'
+  #    - 'assets/**'
+  #    - 'chrome/**'
+  #    - 'locale/**'
+  #    - 'CHANGELOG.md'
   workflow_dispatch:  # 允许手动触发
 
 # 添加权限设置
