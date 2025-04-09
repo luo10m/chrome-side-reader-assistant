@@ -17,6 +17,8 @@
     --system-message-bg: #ff9500;
     --system-message-text: #ffffff;
     --code-bg: #f2f2f7;
+    --primary-color-rgb: 79, 70, 229; /* 对应 --primary-color: #4f46e5 */
+    --border-color-light: rgba(0, 0, 0, 0.05);
 }
 
 [data-theme="dark"] {
@@ -38,6 +40,7 @@
     --system-message-bg: #ff9f0a;
     --system-message-text: #ffffff;
     --code-bg: #3a3a3c;
+    --border-color-light: rgba(255, 255, 255, 0.05);
 }
 
 * {

@@ -678,47 +678,47 @@ code {
     overflow-x: auto;
     padding: 0.5em;
     background: transparent !important;
-    color: var(--code-color);
-    background: var(--code-bg);
+    color: var(--code-color) !important;
+    background: var(--code-bg) !important;
 }
 
 .hljs-comment,
 .hljs-quote {
-    color: var(--code-comment);
+    color: var(--code-comment) !important;
     font-style: italic;
 }
 
 .hljs-keyword,
 .hljs-selector-tag {
-    color: var(--code-keyword);
+    color: var(--code-keyword) !important;
 }
 
 .hljs-string,
 .hljs-doctag {
-    color: var(--code-string);
+    color: var(--code-string) !important;
 }
 
 .hljs-number,
 .hljs-literal {
-    color: var(--code-number);
+    color: var(--code-number) !important;
 }
 
 .hljs-title,
 .hljs-section,
 .hljs-selector-id {
-    color: var(--code-function);
+    color: var(--code-function) !important;
 }
 
 .hljs-tag,
 .hljs-name,
 .hljs-attr {
-    color: var(--code-tag);
+    color: var(--code-tag) !important;
 }
 
 .hljs-attribute,
 .hljs-variable,
 .hljs-template-variable {
-    color: var(--code-attr);
+    color: var(--code-attr) !important;
 }
 
 /* 确保深色模式下的高亮样式正确应用 */
@@ -846,6 +846,12 @@ code {
     padding: 0;
 }
 
+.no-history {
+    padding: 12px 15px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
 .history-item {
     padding: 12px 15px;
     display: flex;
@@ -965,13 +971,3 @@ code {
     opacity: 0.5;
     cursor: not-allowed;
 }
-
-/* 添加 CSS 变量以支持颜色转换 */
-:root {
-    --primary-color-rgb: 79, 70, 229; /* 对应 --primary-color: #4f46e5 */
-    --border-color-light: rgba(0, 0, 0, 0.05);
-}
-
-[data-theme="dark"] {
-    --border-color-light: rgba(255, 255, 255, 0.05);
-} 
