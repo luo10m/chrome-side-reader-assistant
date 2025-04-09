@@ -2,6 +2,8 @@
 
 ## v1.0.3
 - Remake UI
+- Fix some bugs
+- Fix some issues
 
 ## v1.0.2
 - Add OpenAI API support

@@ -10,6 +10,7 @@ on:
       - 'assets/**'
       - 'chrome/**'
       - 'locale/**'
+      - 'CHANGELOG.md'
   workflow_dispatch:  # 允许手动触发
 
 # 添加权限设置
@@ -45,6 +46,25 @@ jobs:
           NAME=$(grep -o '"name": *"[^"]*"' manifest.json | grep -o '"[^"]*"$' | tr -d '"' | tr ' ' '-')
           echo "NAME=$NAME" >> $GITHUB_ENV
           echo "name=$NAME" >> $GITHUB_OUTPUT
+      
+      - name: Extract changelog for current version
+        id: get_changelog
+        run: |
+          # 提取当前版本的变更日志
+          CHANGELOG_CONTENT=$(awk -v ver="v$VERSION" '
+            BEGIN { found=0; content=""; }
+            /^## v[0-9]+\.[0-9]+\.[0-9]+/ {
+              if (found == 1) { exit }
+              if ($0 ~ ver) { found=1; next }
+            }
+            found == 1 { content = content $0 "\n" }
+            END { print content }
+          ' CHANGELOG.md)
+          
+          # 将变更日志内容保存到环境变量，处理多行文本
+          echo 'CHANGELOG_CONTENT<<EOF' >> $GITHUB_ENV
+          echo "$CHANGELOG_CONTENT" >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
       
       - name: Check if tag exists
         id: check_tag
@@ -96,10 +116,7 @@ jobs:
           body: |
             # Release v${{ env.VERSION }}
             
-            Automatic release of version ${{ env.VERSION }}
-            
-            ## What's Changed
-            * See commit history for details
+            ${{ env.CHANGELOG_CONTENT }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
@@ -111,5 +128,7 @@ jobs:
           files: ${{ env.ZIP_NAME }}
           body: |
             Updated package for v${{ env.VERSION }}
+            
+            ${{ env.CHANGELOG_CONTENT }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
