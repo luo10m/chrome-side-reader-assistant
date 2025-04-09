@@ -1,0 +1,110 @@
+name: Build and Release Extension
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'manifest.json'
+      - 'src/**'
+      - 'assets/**'
+      - 'chrome/**'
+      - 'locale/**'
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # 获取完整历史以便创建标签
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+      
+      - name: Extract version from manifest.json
+        id: get_version
+        run: |
+          VERSION=$(grep -o '"version": *"[^"]*"' manifest.json | grep -o '"[^"]*"$' | tr -d '"')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "::set-output name=version::$VERSION"
+      
+      - name: Get extension name from manifest.json
+        id: get_name
+        run: |
+          NAME=$(grep -o '"name": *"[^"]*"' manifest.json | grep -o '"[^"]*"$' | tr -d '"' | tr ' ' '-')
+          echo "NAME=$NAME" >> $GITHUB_ENV
+          echo "::set-output name=name::$NAME"
+      
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "TAG_EXISTS=true" >> $GITHUB_ENV
+            echo "::set-output name=exists::true"
+          else
+            echo "TAG_EXISTS=false" >> $GITHUB_ENV
+            echo "::set-output name=exists::false"
+          fi
+      
+      - name: Create tag if not exists
+        if: env.TAG_EXISTS == 'false'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
+      
+      - name: Create ZIP package
+        run: |
+          ZIP_NAME="${NAME}-${VERSION}-chrome.zip"
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+          
+          # 创建临时目录用于打包
+          mkdir -p build
+          
+          # 复制所需文件到临时目录
+          cp -r manifest.json src assets chrome locale build/
+          
+          # 进入临时目录并创建ZIP包
+          cd build
+          zip -r "../$ZIP_NAME" ./*
+          cd ..
+          
+          echo "ZIP file created: $ZIP_NAME"
+      
+      - name: Create Release
+        id: create_release
+        if: env.TAG_EXISTS == 'false'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: Release v${{ env.VERSION }}
+          draft: false
+          prerelease: false
+          files: ${{ env.ZIP_NAME }}
+          body: |
+            # Release v${{ env.VERSION }}
+            
+            Automatic release of version ${{ env.VERSION }}
+            
+            ## What's Changed
+            * See commit history for details
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload to existing release
+        if: env.TAG_EXISTS == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ env.VERSION }}
+          files: ${{ env.ZIP_NAME }}
+          body: |
+            Updated package for v${{ env.VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
