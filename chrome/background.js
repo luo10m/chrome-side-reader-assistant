@@ -17,6 +17,7 @@ const defaultSettings = {
     openaiApiKey: '',   
     openaiBaseUrl: 'https://api.openai.com/v1',
     openaiModel: 'gpt-3.5-turbo',
+    openaiCustomModel: '',
 };
 
 // current settings

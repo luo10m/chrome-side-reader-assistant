@@ -271,8 +271,8 @@ export function loadAIChat(container) {
                                     }
                                 }
                             }
-                        } catch (readError) {
-                            console.error('Error reading stream:', readError);
+                        } catch (error) {
+                            console.error('Error reading stream:', error);
                             break;
                         }
                     }
@@ -309,6 +309,15 @@ export function loadAIChat(container) {
                     if (!fullResponse) {
                         console.error('No content received from OpenAI streaming response');
                         streamingMessageElement.innerHTML = '<div class="error-message">Error: No content received from OpenAI</div>';
+                    } else {
+                        // 将完整的响应添加到聊天历史
+                        chatHistory.push({
+                            role: 'assistant',
+                            content: fullResponse
+                        });
+                        
+                        // 保存聊天历史
+                        await saveCurrentChat();
                     }
                 } else {
                     // Handle non-streaming response
@@ -348,9 +357,10 @@ export function loadAIChat(container) {
                         content: response.fullResponse
                     });
                     
-                    // Save chat history
-                    await saveCurrentChat();
+                
                 }
+                    // Save chat history
+                await saveCurrentChat();
                 
                 // Reset generating state
                 isGenerating = false;
@@ -934,8 +944,8 @@ export function loadAIChat(container) {
                                         }
                                     }
                                 }
-                            } catch (readError) {
-                                console.error('Error reading stream:', readError);
+                            } catch (error) {
+                                console.error('Error reading stream:', error);
                                 break;
                             }
                         }
@@ -972,6 +982,15 @@ export function loadAIChat(container) {
                         if (!fullResponse) {
                             console.error('No content received from OpenAI streaming response');
                             messageContent.innerHTML = '<div class="error-message">Error: No content received from OpenAI</div>';
+                        } else {
+                            // 将完整的响应添加到聊天历史
+                            chatHistory.push({
+                                role: 'assistant',
+                                content: fullResponse
+                            });
+                            
+                            // 保存聊天历史
+                            await saveCurrentChat();
                         }
                     } else if (response) {
                         // 处理非流式响应
@@ -995,6 +1014,15 @@ export function loadAIChat(container) {
                                     console.debug('Error during code highlighting:', e);
                                 }
                             }
+                            
+                            // 将响应添加到聊天历史
+                            chatHistory.push({
+                                role: 'assistant',
+                                content: responseText
+                            });
+                            
+                            // 保存聊天历史
+                            await saveCurrentChat();
                         } else {
                             console.error('Invalid response format:', response);
                             messageContent.innerHTML = '<div class="error-message">Error: Invalid response format</div>';
@@ -1003,6 +1031,15 @@ export function loadAIChat(container) {
                         console.error('Empty response from OpenAI');
                         messageContent.innerHTML = '<div class="error-message">Error: Empty response from OpenAI</div>';
                     }
+                    
+                    // 显示重新生成按钮
+                    if (regenerateButton) {
+                        regenerateButton.style.display = '';  // 恢复默认显示状态
+                    }
+                    
+                    // 自动滚动到底部
+                    scrollToBottom();
+                    
                 } catch (openaiError) {
                     console.error('Error using OpenAI service:', openaiError);
                     messageContent.innerHTML = `<div class="error-message">Error using OpenAI: ${openaiError.message}</div>`;
@@ -1066,6 +1103,16 @@ export function loadAIChat(container) {
                         console.error('Invalid response format from Ollama:', response);
                         messageContent.innerHTML = '<div class="error-message">Error: Invalid response format from Ollama</div>';
                     }
+                    
+                    // 在处理完Ollama响应后，添加助手消息到聊天历史
+                    chatHistory.push({
+                        role: 'assistant',
+                        content: responseText
+                    });
+                    
+                    // 保存聊天历史
+                    await saveCurrentChat();
+                    
                 } catch (ollamaError) {
                     console.error('Error using Ollama service:', ollamaError);
                     messageContent.innerHTML = `<div class="error-message">Error using Ollama: ${ollamaError.message}</div>`;

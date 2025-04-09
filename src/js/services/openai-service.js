@@ -16,8 +16,12 @@ export async function sendMessageToOpenAI(message, history = [], systemPrompt = 
         const apiUrl = settings.openaiBaseUrl + '/chat/completions';
         console.debug('Using OpenAI API URL:', apiUrl);
         
-        // Prepare model
-        const model = settings.openaiModel || 'gpt-3.5-turbo';
+        // Get model name, if it's a custom model use the custom model name
+        let model = settings.openaiModel || 'gpt-3.5-turbo';
+        if (model === 'custom' && settings.openaiCustomModel) {
+            model = settings.openaiCustomModel;
+        }
+        
         console.debug('Using OpenAI model:', model);
         
         // Prepare messages

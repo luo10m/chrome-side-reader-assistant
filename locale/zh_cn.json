@@ -92,6 +92,10 @@
           "loading": "加载模型中...",
           "empty": "未找到模型",
           "error": "加载模型出错"
+        },
+        "customModel": {
+          "label": "自定义模型",
+          "placeholder": "输入自定义模型名称"
         }
       }
     },

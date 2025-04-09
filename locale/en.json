@@ -92,6 +92,10 @@
           "loading": "Loading models...",
           "empty": "No models found",
           "error": "Error loading models"
+        },
+        "customModel": {
+          "label": "Custom Model",
+          "placeholder": "Enter custom model name"
         }
       }
     },

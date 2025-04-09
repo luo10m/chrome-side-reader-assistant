@@ -144,10 +144,18 @@ export async function loadSettings(container) {
                                     <option value="gpt-3.5-turbo" ${settings.openaiModel === 'gpt-3.5-turbo' ? 'selected' : ''}>GPT-3.5 Turbo</option>
                                     <option value="gpt-4" ${settings.openaiModel === 'gpt-4' ? 'selected' : ''}>GPT-4</option>
                                     <option value="gpt-4-turbo" ${settings.openaiModel === 'gpt-4-turbo' ? 'selected' : ''}>GPT-4 Turbo</option>
+                                    <option value="custom" ${settings.openaiModel === 'custom' ? 'selected' : ''}>Custom</option>
                                 </select>
                                 <button id="refresh-openai-models" class="icon-button" data-i18n-title="settings.buttons.refresh">
                                     <img src="assets/svg/refresh.svg" alt="Refresh" class="button-icon">
                                 </button>
+                            </div>
+                        </div>
+
+                        <div class="settings-item">
+                            <label for="openai-custom-model" data-i18n="settings.sections.openai.customModel.label">Custom Model</label>
+                            <div class="settings-control">
+                                <input type="text" id="openai-custom-model" placeholder="custom-model-name" value="${settings.openaiCustomModel || ''}">
                             </div>
                         </div>
                         
@@ -488,6 +496,7 @@ export async function loadSettings(container) {
             openaiApiKey: document.getElementById('openai-api-key').value.trim(),
             openaiBaseUrl: document.getElementById('openai-base-url').value.trim(),
             openaiModel: document.getElementById('openai-model-select').value,
+            openaiCustomModel: document.getElementById('openai-custom-model').value.trim(),
         };
         
         try {
@@ -548,6 +557,7 @@ export async function loadSettings(container) {
                     openaiApiKey.value = resetSettings.openaiApiKey || '';
                     openaiBaseUrl.value = resetSettings.openaiBaseUrl || 'https://api.openai.com/v1';
                     openaiModelSelect.value = resetSettings.openaiModel || 'gpt-3.5-turbo';
+                    openaiCustomModel.value = resetSettings.openaiCustomModel || '';
 
                     // 更新模型列表
                     const fullUrl = `${ollamaHostInput.value}:${ollamaPortInput.value}${ollamaPathInput.value}`;
@@ -609,7 +619,7 @@ export async function loadSettings(container) {
     const refreshOpenAIModels = document.getElementById('refresh-openai-models');
     const testOpenAIConnection = document.getElementById('test-openai-connection');
     const openaiConnectionStatus = document.getElementById('openai-connection-status');
-    
+    const openaiCustomModel = document.getElementById('openai-custom-model');
     // 刷新 OpenAI 模型列表
     refreshOpenAIModels.addEventListener('click', async () => {
         const apiKey = openaiApiKey.value.trim();
