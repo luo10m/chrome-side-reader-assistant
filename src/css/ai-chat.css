@@ -971,3 +971,57 @@ code {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* 修改重新生成按钮样式，确保在所有主题下都能正确显示 */
+.message-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    width: max-content;
+}
+
+/* 只在非欢迎消息的助手消息上显示重新生成按钮 */
+.message.assistant:not(.welcome-message):hover .message-actions {
+    opacity: 1;
+}
+
+/* 确保欢迎消息和用户消息上不显示重新生成按钮 */
+.message.user .message-actions,
+.message.welcome-message .message-actions {
+    display: none !important;
+}
+
+.regenerate-button {
+    background: none;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+}
+
+.regenerate-button:hover {
+    color: var(--primary-color);
+}
+
+.regenerate-button .button-icon {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+}
+
+/* 确保在暗色模式下图标颜色正确 */
+[data-theme="dark"] .regenerate-button {
+    filter: invert(70%);
+}
+
+[data-theme="dark"] .regenerate-button:hover {
+    filter: invert(50%);
+    transition: filter 0.2s;
+}

@@ -20,7 +20,8 @@
     "noHistory": "No chat history",
     "untitled": "Untitled Chat",
     "systemMessage": "Chat history cleared. Start a new conversation.",
-    "welcomeMessage": "Hi, How can I help you today?"
+    "welcomeMessage": "Hi, How can I help you today?",
+    "regenerate": "Regenerate response"
   },
   "settings": {
     "header": "Settings",

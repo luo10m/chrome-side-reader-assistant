@@ -1,5 +1,6 @@
 // Import the API service and markdown renderer
 import { sendMessageToOllama, getSettings } from '../services/ollama-service.js';
+import { sendMessageToOpenAI } from '../services/openai-service.js';
 import { renderMarkdown } from '../utils/markdown-renderer.js';
 import { t } from '../utils/i18n.js';
 
@@ -27,13 +28,13 @@ export function loadAIChat(container) {
                 <div class="chat-input-container">
                     <textarea id="chat-input" data-i18n-placeholder="chat.placeholder" placeholder="Type your message..." rows="1"></textarea>
                     <div class="chat-actions">
-                        <button id="new-chat-button" class="action-button" data-i18n-title="chat.newChat">
+                        <button id="new-chat-button" class="action-button" data-i18n-title="chat.newChat" title="New Chat">
                             <img src="assets/svg/new-chat.svg" alt="New Chat" class="button-icon">
                         </button>
-                        <button id="history-button" class="action-button" data-i18n-title="chat.history">
+                        <button id="history-button" class="action-button" data-i18n-title="chat.history" title="Chat History">
                             <img src="assets/svg/history.svg" alt="History" class="button-icon">
                         </button>
-                        <button id="send-button" data-i18n-title="chat.send">
+                        <button id="send-button" data-i18n-title="chat.send" title="Send">
                             <img src="assets/svg/send.svg" alt="Send" class="button-icon">
                         </button>
                     </div>
@@ -113,6 +114,24 @@ export function loadAIChat(container) {
         }
         
         messageElement.appendChild(contentElement);
+        
+        // 为助手消息添加重新生成按钮
+        if (role === 'assistant') {
+            const actionsElement = document.createElement('div');
+            actionsElement.className = 'message-actions';
+            actionsElement.innerHTML = `
+                <button class="regenerate-button" title="${t('chat.regenerate')}">
+                    <img src="assets/svg/refresh.svg" alt="Regenerate" class="button-icon">
+                </button>
+            `;
+            messageElement.appendChild(actionsElement);
+            
+            // 添加重新生成功能
+            const regenerateButton = actionsElement.querySelector('.regenerate-button');
+            regenerateButton.addEventListener('click', () => {
+                regenerateResponse(messageElement);
+            });
+        }
         
         chatMessages.appendChild(messageElement);
         
@@ -204,42 +223,33 @@ export function loadAIChat(container) {
                 
                 // Handle streaming response
                 if (response.streaming) {
-                    const { reader, decoder } = response;
-                    let fullText = '';
-                    let buffer = '';
+                    let fullResponse = '';
+                    let buffer = ''; // 用于存储可能被截断的数据
                     
+                    // 处理流式响应
                     while (true) {
-                        const { done, value } = await reader.read();
-                        
-                        if (done) {
-                            break;
-                        }
-                        
-                        // Decode chunk
-                        const chunk = decoder.decode(value, { stream: true });
-                        buffer += chunk;
-                        
-                        // Process complete lines
-                        const lines = buffer.split('\n');
-                        buffer = lines.pop(); // Keep the last potentially incomplete line
-                        
-                        for (const line of lines) {
-                            if (line.trim()) {
-                                const parsed = parseOpenAIStreamingResponse(line);
-                                
-                                if (!parsed.done && parsed.content) {
-                                    fullText += parsed.content;
+                        try {
+                            const { done, value } = await response.reader.read();
+                            
+                            if (done) {
+                                break;
+                            }
+                            
+                            // 解码响应
+                            const chunk = response.decoder.decode(value, { stream: true });
+                            buffer += chunk;
+                            
+                            // 查找完整的数据行
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop() || ''; // 保留最后一行（可能不完整）
+                            
+                            for (const line of lines) {
+                                if (line.trim().startsWith('data:')) {
+                                    const content = parseOpenAIStreamingResponse(line);
                                     
-                                    // 直接更新 streamingMessageElement 而不是调用 updateAssistantMessage
-                                    if (streamingMessageElement) {
-                                        // 移除打字指示器
-                                        const typingIndicator = streamingMessageElement.querySelector('.typing-indicator');
-                                        if (typingIndicator) {
-                                            typingIndicator.remove();
-                                        }
-                                        
-                                        // 更新内容
-                                        streamingMessageElement.innerHTML = renderMarkdown(fullText);
+                                    if (content && typeof content === 'string') {
+                                        fullResponse += content;
+                                        streamingMessageElement.innerHTML = renderMarkdown(fullResponse);
                                         
                                         // 应用代码高亮
                                         if (typeof hljs !== 'undefined') {
@@ -256,53 +266,50 @@ export function loadAIChat(container) {
                                             }
                                         }
                                         
-                                        // 滚动到底部
-                                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                                        // 自动滚动到底部
+                                        scrollToBottom();
                                     }
                                 }
                             }
+                        } catch (readError) {
+                            console.error('Error reading stream:', readError);
+                            break;
                         }
                     }
                     
-                    // Process the last buffer
-                    if (buffer.trim()) {
-                        const parsed = parseOpenAIStreamingResponse(buffer);
-                        if (!parsed.done && parsed.content) {
-                            fullText += parsed.content;
+                    // 处理buffer中可能剩余的数据
+                    if (buffer.trim() && buffer.trim().startsWith('data:')) {
+                        const content = parseOpenAIStreamingResponse(buffer);
+                        
+                        if (content && typeof content === 'string') {
+                            fullResponse += content;
+                            streamingMessageElement.innerHTML = renderMarkdown(fullResponse);
                             
-                            // 直接更新 streamingMessageElement
-                            if (streamingMessageElement) {
-                                streamingMessageElement.innerHTML = renderMarkdown(fullText);
-                                
-                                // 应用代码高亮
-                                if (typeof hljs !== 'undefined') {
-                                    try {
-                                        streamingMessageElement.querySelectorAll('pre code').forEach((block) => {
-                                            try {
-                                                hljs.highlightElement(block);
-                                            } catch (e) {
-                                                console.debug('Error highlighting code block:', e);
-                                            }
-                                        });
-                                    } catch (e) {
-                                        console.debug('Error during code highlighting:', e);
-                                    }
+                            // 应用代码高亮
+                            if (typeof hljs !== 'undefined') {
+                                try {
+                                    streamingMessageElement.querySelectorAll('pre code').forEach((block) => {
+                                        try {
+                                            hljs.highlightElement(block);
+                                        } catch (e) {
+                                            console.debug('Error highlighting code block:', e);
+                                        }
+                                    });
+                                } catch (e) {
+                                    console.debug('Error during code highlighting:', e);
                                 }
-                                
-                                // 滚动到底部
-                                chatMessages.scrollTop = chatMessages.scrollHeight;
                             }
+                            
+                            // 自动滚动到底部
+                            scrollToBottom();
                         }
                     }
                     
-                    // Add to chat history
-                    chatHistory.push({
-                        role: 'assistant',
-                        content: fullText
-                    });
-                    
-                    // Save chat history
-                    await saveCurrentChat();
+                    // 如果没有收到任何内容，显示错误消息
+                    if (!fullResponse) {
+                        console.error('No content received from OpenAI streaming response');
+                        streamingMessageElement.innerHTML = '<div class="error-message">Error: No content received from OpenAI</div>';
+                    }
                 } else {
                     // Handle non-streaming response
                     // 直接更新 streamingMessageElement
@@ -725,5 +732,387 @@ export function loadAIChat(container) {
             chatInput.classList.remove('disabled');
             sendButton.classList.remove('disabled');
         }
+    }
+
+    // 创建并添加刷新图标SVG
+    function createRefreshSvg() {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("class", "button-icon");
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("width", "16");
+        svg.setAttribute("height", "16");
+        
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", "M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 9h7V2l-2.35 4.35z");
+        path.setAttribute("fill", "currentColor");
+        
+        svg.appendChild(path);
+        return svg;
+    }
+
+    // 设置 MutationObserver 来监听新消息
+    function setupMessageObserver() {
+        const chatMessages = document.getElementById('chat-messages');
+        if (!chatMessages) return;
+        
+        const chatMessagesObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.type === 'childList') {
+                    mutation.addedNodes.forEach((node) => {
+                        // 严格检查是否为非欢迎消息的助手消息
+                        if (node.nodeType === 1 && 
+                            node.classList.contains('message') && 
+                            node.classList.contains('assistant') && 
+                            !node.classList.contains('user') && 
+                            !node.classList.contains('welcome-message')) {
+                            
+                            // 检查是否已经有重新生成按钮
+                            if (!node.querySelector('.message-actions')) {
+                                // 添加重新生成按钮
+                                const actionsElement = document.createElement('div');
+                                actionsElement.className = 'message-actions';
+                                
+                                const regenerateButton = document.createElement('button');
+                                regenerateButton.className = 'regenerate-button';
+                                regenerateButton.title = t('chat.regenerate');
+                                
+                                // 添加刷新图标
+                                regenerateButton.appendChild(createRefreshSvg());
+                                
+                                actionsElement.appendChild(regenerateButton);
+                                node.appendChild(actionsElement);
+                                
+                                // 添加重新生成功能
+                                regenerateButton.addEventListener('click', () => {
+                                    regenerateResponse(node);
+                                });
+                            }
+                        }
+                    });
+                }
+            });
+        });
+        
+        // 开始观察
+        chatMessagesObserver.observe(chatMessages, { childList: true });
+        
+        // 为现有的非欢迎消息的助手消息添加重新生成按钮
+        document.querySelectorAll('.message.assistant:not(.user):not(.welcome-message)').forEach(node => {
+            if (!node.querySelector('.message-actions')) {
+                // 添加重新生成按钮
+                const actionsElement = document.createElement('div');
+                actionsElement.className = 'message-actions';
+                
+                const regenerateButton = document.createElement('button');
+                regenerateButton.className = 'regenerate-button';
+                regenerateButton.title = t('chat.regenerate');
+                
+                // 添加刷新图标
+                regenerateButton.appendChild(createRefreshSvg());
+                
+                actionsElement.appendChild(regenerateButton);
+                node.appendChild(actionsElement);
+                
+                // 添加重新生成功能
+                regenerateButton.addEventListener('click', () => {
+                    regenerateResponse(node);
+                });
+            }
+        });
+        
+        // 移除欢迎消息上的重新生成按钮
+        document.querySelectorAll('.message.welcome-message .message-actions').forEach(element => {
+            element.remove();
+        });
+    }
+
+    // 重新生成响应函数
+    async function regenerateResponse(assistantMessageElement) {
+        // 找到前一条用户消息
+        let userMessageElement = assistantMessageElement.previousElementSibling;
+        
+        if (!userMessageElement || !userMessageElement.classList.contains('user')) {
+            console.error('Cannot find the user message to regenerate response');
+            return;
+        }
+        
+        // 获取用户消息内容
+        const userMessageContent = userMessageElement.querySelector('.message-content').textContent;
+        
+        // 获取助手消息内容元素
+        const messageContent = assistantMessageElement.querySelector('.message-content');
+        
+        // 显示打字指示器
+        messageContent.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+        
+        // 隐藏重新生成按钮
+        const regenerateButton = assistantMessageElement.querySelector('.regenerate-button');
+        if (regenerateButton) {
+            regenerateButton.style.display = 'none';
+        }
+        
+        try {
+            // 获取当前设置
+            const settings = await getSettings();
+            
+            // 收集聊天历史
+            const historyMessages = [];
+            let currentElement = document.getElementById('chat-messages').firstChild;
+            
+            // 遍历所有消息元素，直到当前助手消息
+            while (currentElement && currentElement !== assistantMessageElement) {
+                if (currentElement.classList.contains('message')) {
+                    const role = currentElement.classList.contains('user') ? 'user' : 'assistant';
+                    const content = currentElement.querySelector('.message-content').textContent;
+                    
+                    historyMessages.push({
+                        role: role,
+                        content: content
+                    });
+                }
+                currentElement = currentElement.nextElementSibling;
+            }
+            
+            // 根据默认AI服务选择
+            const defaultAI = settings.defaultAI || settings.service || 'ollama';
+            
+            if (defaultAI === 'openai') {
+                // 导入OpenAI服务
+                const { sendMessageToOpenAI, parseOpenAIStreamingResponse } = await import('../services/openai-service.js');
+                
+                try {
+                    // 使用OpenAI API
+                    const response = await sendMessageToOpenAI(userMessageContent, historyMessages, settings.systemPrompt);
+                    
+                    // 处理流式响应
+                    if (response && response.streaming) {
+                        let fullResponse = '';
+                        let buffer = ''; // 用于存储可能被截断的数据
+                        
+                        // 处理流式响应
+                        while (true) {
+                            try {
+                                const { done, value } = await response.reader.read();
+                                
+                                if (done) {
+                                    break;
+                                }
+                                
+                                // 解码响应
+                                const chunk = response.decoder.decode(value, { stream: true });
+                                buffer += chunk;
+                                
+                                // 查找完整的数据行
+                                const lines = buffer.split('\n');
+                                buffer = lines.pop() || ''; // 保留最后一行（可能不完整）
+                                
+                                for (const line of lines) {
+                                    if (line.trim().startsWith('data:')) {
+                                        const content = parseOpenAIStreamingResponse(line);
+                                        
+                                        if (content && typeof content === 'string') {
+                                            fullResponse += content;
+                                            messageContent.innerHTML = renderMarkdown(fullResponse);
+                                            
+                                            // 应用代码高亮
+                                            if (typeof hljs !== 'undefined') {
+                                                try {
+                                                    messageContent.querySelectorAll('pre code').forEach((block) => {
+                                                        try {
+                                                            hljs.highlightElement(block);
+                                                        } catch (e) {
+                                                            console.debug('Error highlighting code block:', e);
+                                                        }
+                                                    });
+                                                } catch (e) {
+                                                    console.debug('Error during code highlighting:', e);
+                                                }
+                                            }
+                                            
+                                            // 自动滚动到底部
+                                            scrollToBottom();
+                                        }
+                                    }
+                                }
+                            } catch (readError) {
+                                console.error('Error reading stream:', readError);
+                                break;
+                            }
+                        }
+                        
+                        // 处理buffer中可能剩余的数据
+                        if (buffer.trim() && buffer.trim().startsWith('data:')) {
+                            const content = parseOpenAIStreamingResponse(buffer);
+                            
+                            if (content && typeof content === 'string') {
+                                fullResponse += content;
+                                messageContent.innerHTML = renderMarkdown(fullResponse);
+                                
+                                // 应用代码高亮
+                                if (typeof hljs !== 'undefined') {
+                                    try {
+                                        messageContent.querySelectorAll('pre code').forEach((block) => {
+                                            try {
+                                                hljs.highlightElement(block);
+                                            } catch (e) {
+                                                console.debug('Error highlighting code block:', e);
+                                            }
+                                        });
+                                    } catch (e) {
+                                        console.debug('Error during code highlighting:', e);
+                                    }
+                                }
+                                
+                                // 自动滚动到底部
+                                scrollToBottom();
+                            }
+                        }
+                        
+                        // 如果没有收到任何内容，显示错误消息
+                        if (!fullResponse) {
+                            console.error('No content received from OpenAI streaming response');
+                            messageContent.innerHTML = '<div class="error-message">Error: No content received from OpenAI</div>';
+                        }
+                    } else if (response) {
+                        // 处理非流式响应
+                        const responseText = response.fullResponse || response.message || '';
+                        
+                        // 确保responseText是字符串
+                        if (typeof responseText === 'string') {
+                            messageContent.innerHTML = renderMarkdown(responseText);
+                            
+                            // 应用代码高亮
+                            if (typeof hljs !== 'undefined') {
+                                try {
+                                    messageContent.querySelectorAll('pre code').forEach((block) => {
+                                        try {
+                                            hljs.highlightElement(block);
+                                        } catch (e) {
+                                            console.debug('Error highlighting code block:', e);
+                                        }
+                                    });
+                                } catch (e) {
+                                    console.debug('Error during code highlighting:', e);
+                                }
+                            }
+                        } else {
+                            console.error('Invalid response format:', response);
+                            messageContent.innerHTML = '<div class="error-message">Error: Invalid response format</div>';
+                        }
+                    } else {
+                        console.error('Empty response from OpenAI');
+                        messageContent.innerHTML = '<div class="error-message">Error: Empty response from OpenAI</div>';
+                    }
+                } catch (openaiError) {
+                    console.error('Error using OpenAI service:', openaiError);
+                    messageContent.innerHTML = `<div class="error-message">Error using OpenAI: ${openaiError.message}</div>`;
+                }
+            } else {
+                // 使用Ollama服务
+                // 创建一个更新回调函数
+                const updateCallback = (_, fullContent) => {
+                    // 确保fullContent是字符串
+                    if (typeof fullContent === 'string') {
+                        messageContent.innerHTML = renderMarkdown(fullContent);
+                        
+                        // 应用代码高亮
+                        if (typeof hljs !== 'undefined') {
+                            try {
+                                messageContent.querySelectorAll('pre code').forEach((block) => {
+                                    try {
+                                        hljs.highlightElement(block);
+                                    } catch (e) {
+                                        console.debug('Error highlighting code block:', e);
+                                    }
+                                });
+                            } catch (e) {
+                                console.debug('Error during code highlighting:', e);
+                            }
+                        }
+                        
+                        // 自动滚动到底部
+                        scrollToBottom();
+                    } else {
+                        console.error('Invalid content format in updateCallback:', fullContent);
+                    }
+                };
+                
+                try {
+                    // 使用Ollama服务
+                    const response = await sendMessageToOllama(userMessageContent, historyMessages, updateCallback);
+                    
+                    // 更新助手消息内容
+                    const responseText = response.content || response.message || '';
+                    
+                    // 确保responseText是字符串
+                    if (typeof responseText === 'string') {
+                        messageContent.innerHTML = renderMarkdown(responseText);
+                        
+                        // 应用代码高亮
+                        if (typeof hljs !== 'undefined') {
+                            try {
+                                messageContent.querySelectorAll('pre code').forEach((block) => {
+                                    try {
+                                        hljs.highlightElement(block);
+                                    } catch (e) {
+                                        console.debug('Error highlighting code block:', e);
+                                    }
+                                });
+                            } catch (e) {
+                                console.debug('Error during code highlighting:', e);
+                            }
+                        }
+                    } else {
+                        console.error('Invalid response format from Ollama:', response);
+                        messageContent.innerHTML = '<div class="error-message">Error: Invalid response format from Ollama</div>';
+                    }
+                } catch (ollamaError) {
+                    console.error('Error using Ollama service:', ollamaError);
+                    messageContent.innerHTML = `<div class="error-message">Error using Ollama: ${ollamaError.message}</div>`;
+                }
+            }
+            
+            // 显示重新生成按钮
+            if (regenerateButton) {
+                regenerateButton.style.display = '';  // 恢复默认显示状态
+            }
+            
+            // 自动滚动到底部
+            scrollToBottom();
+            
+        } catch (error) {
+            console.error('Error regenerating response:', error);
+            messageContent.innerHTML = `<div class="error-message">Error regenerating response: ${error.message}</div>`;
+            
+            // 显示重新生成按钮
+            if (regenerateButton) {
+                regenerateButton.style.display = '';  // 恢复默认显示状态
+            }
+            
+            // 自动滚动到底部
+            scrollToBottom();
+        }
+    }
+
+    // 滚动到底部函数
+    function scrollToBottom() {
+        const chatMessages = document.getElementById('chat-messages');
+        if (chatMessages) {
+            // 使用平滑滚动效果
+            chatMessages.scrollTo({
+                top: chatMessages.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+    }
+
+    // 在页面加载完成后设置观察器
+    document.addEventListener('DOMContentLoaded', () => {
+        setupMessageObserver();
+    });
+
+    // 如果页面已经加载完成，立即设置观察器
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        setupMessageObserver();
     }
 } 

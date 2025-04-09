@@ -123,101 +123,50 @@ export async function sendMessageToOpenAI(message, history = [], systemPrompt = 
 
 // Parse OpenAI streaming response
 export function parseOpenAIStreamingResponse(chunk) {
-    // 添加调试日志
-    console.debug('Parsing OpenAI chunk:', chunk);
-    
-    // Remove 'data: ' prefix and parse JSON
-    if (chunk.startsWith('data: ')) {
-        const jsonStr = chunk.slice(6).trim();
-        
-        // Check for [DONE] message
-        if (jsonStr === '[DONE]') {
-            return { done: true };
+    try {
+        // 检查是否是[DONE]消息
+        if (chunk.includes('[DONE]')) {
+            return null;
         }
         
+        // 确保chunk是以data:开头的
+        if (!chunk.trim().startsWith('data:')) {
+            return null;
+        }
+        
+        // 提取JSON部分，移除'data: '前缀
+        let jsonStr = chunk.substring(chunk.indexOf('data:') + 5).trim();
+        
+        // 检查JSON是否完整
         try {
+            // 尝试解析JSON
             const data = JSON.parse(jsonStr);
             
-            // 添加调试日志
-            console.debug('Parsed OpenAI data:', data);
-            
-            // 更健壮的数据提取逻辑
-            if (data.choices && data.choices.length > 0) {
-                const choice = data.choices[0];
-                
-                // 处理流式响应格式 (delta)
-                if (choice.delta && typeof choice.delta.content === 'string') {
-                    return {
-                        done: false,
-                        content: choice.delta.content
-                    };
-                }
-                
-                // 处理非流式响应格式 (message)
-                if (choice.message && typeof choice.message.content === 'string') {
-                    return {
-                        done: false,
-                        content: choice.message.content
-                    };
-                }
-                
-                // 处理旧版 API 格式 (text)
-                if (typeof choice.text === 'string') {
-                    return {
-                        done: false,
-                        content: choice.text
-                    };
-                }
-                
-                // 如果有 finish_reason，可能是流的结束
-                if (choice.finish_reason) {
-                    console.debug('OpenAI stream finished with reason:', choice.finish_reason);
-                    return { done: false, content: '' };
-                }
+            // 检查是否有内容
+            if (data.choices && data.choices.length > 0 && data.choices[0].delta && data.choices[0].delta.content) {
+                return data.choices[0].delta.content;
             }
             
-            // 处理直接返回文本的情况
-            if (typeof data.content === 'string') {
-                return {
-                    done: false,
-                    content: data.content
-                };
+            // 如果没有内容但有完整的消息
+            if (data.choices && data.choices.length > 0 && data.choices[0].message && data.choices[0].message.content) {
+                return data.choices[0].message.content;
             }
             
-            // 处理错误响应
-            if (data.error) {
-                console.error('OpenAI API error:', data.error);
-                return { 
-                    done: false, 
-                    content: `[Error: ${data.error.message || 'Unknown error'}]`,
-                    error: data.error
-                };
+            return null;
+        } catch (jsonError) {
+            // JSON可能被截断，尝试提取content字段
+            const contentMatch = jsonStr.match(/"content":"([^"]*)"/);
+            if (contentMatch && contentMatch[1]) {
+                return contentMatch[1];
             }
             
-            // 没有识别出内容，但不是错误
-            console.debug('No content found in OpenAI response chunk');
-            return { done: false, content: '' };
-        } catch (error) {
-            console.error('Error parsing OpenAI streaming response:', error, 'Raw chunk:', chunk);
-            return { done: false, content: '' };
+            // 如果无法提取content，返回null
+            return null;
         }
-    } else if (chunk.includes('"content":')) {
-        // 尝试处理没有 data: 前缀但包含 content 字段的 JSON
-        try {
-            const match = chunk.match(/"content":"([^"]*)"/);
-            if (match && match[1]) {
-                return {
-                    done: false,
-                    content: match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
-                };
-            }
-        } catch (e) {
-            console.debug('Failed to extract content with regex:', e);
-        }
+    } catch (error) {
+        console.error('Error parsing OpenAI streaming response:', error, 'Raw chunk:', chunk);
+        return null;
     }
-    
-    // Not a data chunk or unrecognized format
-    return { done: false, content: '' };
 }
 
 // Test OpenAI API connection

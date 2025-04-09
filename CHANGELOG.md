@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v1.0.4
+- Fix OpenAI API error handling
+- Add Regenerate button to assistant messages
+- Fix some bugs
+- Support OpenAI API streaming response
+
 ## v1.0.3
 - Remake UI
 - Fix some bugs
