@@ -139,6 +139,8 @@ export function loadTranslate(container) {
                             }
                         }
                         
+                        // 使用白色空间预格式化显示，保留换行
+                        translationOutput.style.whiteSpace = 'pre-wrap';
                         translationOutput.textContent = translation;
                     } else {
                         translationOutput.innerHTML = `<div class="translate-error">${t('translate.translationFailed')}</div>`;
