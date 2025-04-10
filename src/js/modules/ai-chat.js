@@ -125,16 +125,25 @@ export function loadAIChat(container) {
             const actionsElement = document.createElement('div');
             actionsElement.className = 'message-actions';
             actionsElement.innerHTML = `
-                <button class="regenerate-button" title="${t('chat.regenerate')}">
+                <button class="action-copy-button" title="${t('chat.copy')}">
+                    <img src="assets/svg/copy.svg" alt="Copy" class="button-icon">
+                </button>
+                <button class="action-regenerate-button" title="${t('chat.regenerate')}">
                     <img src="assets/svg/refresh.svg" alt="Regenerate" class="button-icon">
                 </button>
             `;
             messageElement.appendChild(actionsElement);
             
             // 添加重新生成功能
-            const regenerateButton = actionsElement.querySelector('.regenerate-button');
+            const regenerateButton = actionsElement.querySelector('.action-regenerate-button');
             regenerateButton.addEventListener('click', () => {
                 regenerateResponse(messageElement);
+            });
+
+            // 添加复制功能
+            const copyButton = actionsElement.querySelector('.action-copy-button');
+            copyButton.addEventListener('click', () => {
+                copyToClipboard(contentElement.textContent);
             });
         }
         
@@ -752,18 +761,23 @@ export function loadAIChat(container) {
 
     // 创建并添加刷新图标SVG
     function createRefreshSvg() {
-        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        svg.setAttribute("class", "button-icon");
-        svg.setAttribute("viewBox", "0 0 24 24");
-        svg.setAttribute("width", "16");
-        svg.setAttribute("height", "16");
-        
-        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        path.setAttribute("d", "M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 9h7V2l-2.35 4.35z");
-        path.setAttribute("fill", "currentColor");
-        
-        svg.appendChild(path);
-        return svg;
+        const refreshIcon = document.createElement('img');
+        refreshIcon.src = 'assets/svg/refresh.svg';
+        refreshIcon.classList.add('button-icon');
+        refreshIcon.setAttribute('viewBox', '0 0 24 24');
+        refreshIcon.setAttribute('width', '16');
+        refreshIcon.setAttribute('height', '16');
+        return refreshIcon;
+    }
+
+    function createCopySvg() {
+        const copyIcon = document.createElement('img');
+        copyIcon.src = 'assets/svg/copy.svg';
+        copyIcon.classList.add('button-icon');
+        copyIcon.setAttribute('viewBox', '0 0 24 24');
+        copyIcon.setAttribute('width', '16');
+        copyIcon.setAttribute('height', '16');
+        return copyIcon;
     }
 
     // 设置 MutationObserver 来监听新消息
@@ -789,18 +803,30 @@ export function loadAIChat(container) {
                                 actionsElement.className = 'message-actions';
                                 
                                 const regenerateButton = document.createElement('button');
-                                regenerateButton.className = 'regenerate-button';
+                                regenerateButton.className = 'action-regenerate-button';
                                 regenerateButton.title = t('chat.regenerate');
+
+                                const copyButton = document.createElement('button');
+                                copyButton.className = 'action-copy-button';
+                                copyButton.title = t('chat.copy');
                                 
                                 // 添加刷新图标
                                 regenerateButton.appendChild(createRefreshSvg());
+                                copyButton.appendChild(createCopySvg());
                                 
+                                actionsElement.appendChild(copyButton);
                                 actionsElement.appendChild(regenerateButton);
                                 node.appendChild(actionsElement);
                                 
                                 // 添加重新生成功能
                                 regenerateButton.addEventListener('click', () => {
                                     regenerateResponse(node);
+                                });
+                                
+                                // 添加复制功能
+                                copyButton.addEventListener('click', () => {
+                                    const content = node.querySelector('.message-content').textContent;
+                                    copyToClipboard(content);
                                 });
                             }
                         }
@@ -820,18 +846,30 @@ export function loadAIChat(container) {
                 actionsElement.className = 'message-actions';
                 
                 const regenerateButton = document.createElement('button');
-                regenerateButton.className = 'regenerate-button';
+                regenerateButton.className = 'action-regenerate-button';
                 regenerateButton.title = t('chat.regenerate');
+
+                const copyButton = document.createElement('button');
+                copyButton.className = 'action-copy-button';
+                copyButton.title = t('chat.copy');
                 
                 // 添加刷新图标
                 regenerateButton.appendChild(createRefreshSvg());
+                copyButton.appendChild(createCopySvg());
                 
+                actionsElement.appendChild(copyButton);
                 actionsElement.appendChild(regenerateButton);
                 node.appendChild(actionsElement);
                 
                 // 添加重新生成功能
                 regenerateButton.addEventListener('click', () => {
                     regenerateResponse(node);
+                });
+                
+                // 添加复制功能
+                copyButton.addEventListener('click', () => {
+                    const content = node.querySelector('.message-content').textContent;
+                    copyToClipboard(content);
                 });
             }
         });
@@ -862,9 +900,15 @@ export function loadAIChat(container) {
         messageContent.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
         
         // 隐藏重新生成按钮
-        const regenerateButton = assistantMessageElement.querySelector('.regenerate-button');
+        const regenerateButton = assistantMessageElement.querySelector('.action-regenerate-button');
         if (regenerateButton) {
             regenerateButton.style.display = 'none';
+        }
+
+        // 隐藏复制按钮
+        const copyButton = assistantMessageElement.querySelector('.action-copy-button');
+        if (copyButton) {
+            copyButton.style.display = 'none';
         }
         
         try {
@@ -893,118 +937,18 @@ export function loadAIChat(container) {
             const defaultAI = settings.defaultAI || settings.service || 'ollama';
             
             if (defaultAI === 'openai') {
-                // 导入OpenAI服务
-                const { sendMessageToOpenAI, parseOpenAIStreamingResponse } = await import('../services/openai-service.js');
-                
+                // 使用OpenAI服务...
+            } else {
+                // 使用Ollama服务
                 try {
-                    // 使用OpenAI API
-                    const response = await sendMessageToOpenAI(userMessageContent, historyMessages, settings.systemPrompt);
+                    // 获取系统提示
+                    const systemPrompt = settings.systemPrompt || '';
                     
-                    // 处理流式响应
-                    if (response && response.streaming) {
-                        let fullResponse = '';
-                        let buffer = ''; // 用于存储可能被截断的数据
-                        
-                        // 处理流式响应
-                        while (true) {
-                            try {
-                                const { done, value } = await response.reader.read();
-                                
-                                if (done) {
-                                    break;
-                                }
-                                
-                                // 解码响应
-                                const chunk = response.decoder.decode(value, { stream: true });
-                                buffer += chunk;
-                                
-                                // 查找完整的数据行
-                                const lines = buffer.split('\n');
-                                buffer = lines.pop() || ''; // 保留最后一行（可能不完整）
-                                
-                                for (const line of lines) {
-                                    if (line.trim().startsWith('data:')) {
-                                        const content = parseOpenAIStreamingResponse(line);
-                                        
-                                        if (content && typeof content === 'string') {
-                                            fullResponse += content;
-                                            messageContent.innerHTML = renderMarkdown(fullResponse);
-                                            
-                                            // 应用代码高亮
-                                            if (typeof hljs !== 'undefined') {
-                                                try {
-                                                    messageContent.querySelectorAll('pre code').forEach((block) => {
-                                                        try {
-                                                            hljs.highlightElement(block);
-                                                        } catch (e) {
-                                                            console.debug('Error highlighting code block:', e);
-                                                        }
-                                                    });
-                                                } catch (e) {
-                                                    console.debug('Error during code highlighting:', e);
-                                                }
-                                            }
-                                            
-                                            // 自动滚动到底部
-                                            scrollToBottom();
-                                        }
-                                    }
-                                }
-                            } catch (error) {
-                                console.error('Error reading stream:', error);
-                                break;
-                            }
-                        }
-                        
-                        // 处理buffer中可能剩余的数据
-                        if (buffer.trim() && buffer.trim().startsWith('data:')) {
-                            const content = parseOpenAIStreamingResponse(buffer);
-                            
-                            if (content && typeof content === 'string') {
-                                fullResponse += content;
-                                messageContent.innerHTML = renderMarkdown(fullResponse);
-                                
-                                // 应用代码高亮
-                                if (typeof hljs !== 'undefined') {
-                                    try {
-                                        messageContent.querySelectorAll('pre code').forEach((block) => {
-                                            try {
-                                                hljs.highlightElement(block);
-                                            } catch (e) {
-                                                console.debug('Error highlighting code block:', e);
-                                            }
-                                        });
-                                    } catch (e) {
-                                        console.debug('Error during code highlighting:', e);
-                                    }
-                                }
-                                
-                                // 自动滚动到底部
-                                scrollToBottom();
-                            }
-                        }
-                        
-                        // 如果没有收到任何内容，显示错误消息
-                        if (!fullResponse) {
-                            console.error('No content received from OpenAI streaming response');
-                            messageContent.innerHTML = '<div class="error-message">Error: No content received from OpenAI</div>';
-                        } else {
-                            // 将完整的响应添加到聊天历史
-                            chatHistory.push({
-                                role: 'assistant',
-                                content: fullResponse
-                            });
-                            
-                            // 保存聊天历史
-                            await saveCurrentChat();
-                        }
-                    } else if (response) {
-                        // 处理非流式响应
-                        const responseText = response.fullResponse || response.message || '';
-                        
-                        // 确保responseText是字符串
-                        if (typeof responseText === 'string') {
-                            messageContent.innerHTML = renderMarkdown(responseText);
+                    // 创建一个更新回调函数
+                    const updateCallback = (_, fullContent) => {
+                        // 确保fullContent是字符串
+                        if (typeof fullContent === 'string') {
+                            messageContent.innerHTML = renderMarkdown(fullContent);
                             
                             // 应用代码高亮
                             if (typeof hljs !== 'undefined') {
@@ -1021,71 +965,26 @@ export function loadAIChat(container) {
                                 }
                             }
                             
-                            // 将响应添加到聊天历史
-                            chatHistory.push({
-                                role: 'assistant',
-                                content: responseText
-                            });
-                            
-                            // 保存聊天历史
-                            await saveCurrentChat();
+                            // 自动滚动到底部
+                            scrollToBottom();
                         } else {
-                            console.error('Invalid response format:', response);
-                            messageContent.innerHTML = '<div class="error-message">Error: Invalid response format</div>';
+                            console.error('Invalid content format in updateCallback:', fullContent);
                         }
-                    } else {
-                        console.error('Empty response from OpenAI');
-                        messageContent.innerHTML = '<div class="error-message">Error: Empty response from OpenAI</div>';
-                    }
+                    };
                     
-                    // 显示重新生成按钮
-                    if (regenerateButton) {
-                        regenerateButton.style.display = '';  // 恢复默认显示状态
-                    }
-                    
-                    // 自动滚动到底部
-                    scrollToBottom();
-                    
-                } catch (openaiError) {
-                    console.error('Error using OpenAI service:', openaiError);
-                    messageContent.innerHTML = `<div class="error-message">Error using OpenAI: ${openaiError.message}</div>`;
-                }
-            } else {
-                // 使用Ollama服务
-                // 创建一个更新回调函数
-                const updateCallback = (_, fullContent) => {
-                    // 确保fullContent是字符串
-                    if (typeof fullContent === 'string') {
-                        messageContent.innerHTML = renderMarkdown(fullContent);
-                        
-                        // 应用代码高亮
-                        if (typeof hljs !== 'undefined') {
-                            try {
-                                messageContent.querySelectorAll('pre code').forEach((block) => {
-                                    try {
-                                        hljs.highlightElement(block);
-                                    } catch (e) {
-                                        console.debug('Error highlighting code block:', e);
-                                    }
-                                });
-                            } catch (e) {
-                                console.debug('Error during code highlighting:', e);
-                            }
-                        }
-                        
-                        // 自动滚动到底部
-                        scrollToBottom();
-                    } else {
-                        console.error('Invalid content format in updateCallback:', fullContent);
-                    }
-                };
-                
-                try {
-                    // 使用Ollama服务
+                    // 发送消息到Ollama，使用updateCallback
                     const response = await sendMessageToOllama(userMessageContent, historyMessages, updateCallback);
                     
-                    // 更新助手消息内容
-                    const responseText = response.content || response.message || '';
+                    // 处理响应
+                    let responseText = '';
+                    
+                    if (response && typeof response === 'string') {
+                        responseText = response;
+                    } else if (response && response.message) {
+                        responseText = response.message.content;
+                    } else if (response && response.content) {
+                        responseText = response.content;
+                    }
                     
                     // 确保responseText是字符串
                     if (typeof responseText === 'string') {
@@ -1110,11 +1009,30 @@ export function loadAIChat(container) {
                         messageContent.innerHTML = '<div class="error-message">Error: Invalid response format from Ollama</div>';
                     }
                     
-                    // 在处理完Ollama响应后，添加助手消息到聊天历史
-                    chatHistory.push({
-                        role: 'assistant',
-                        content: responseText
-                    });
+                    // 关键修复：查找并替换聊天历史中的助手消息，而不是添加新消息
+                    // 找到当前助手消息在聊天历史中的索引
+                    let assistantIndex = -1;
+                    for (let i = 0; i < chatHistory.length; i++) {
+                        if (chatHistory[i].role === 'assistant') {
+                            // 找到用户消息后的第一个助手消息
+                            if (i > 0 && chatHistory[i-1].role === 'user' && 
+                                chatHistory[i-1].content === userMessageContent) {
+                                assistantIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (assistantIndex !== -1) {
+                        // 替换现有的助手消息
+                        chatHistory[assistantIndex].content = responseText;
+                    } else {
+                        // 如果找不到匹配的消息（这种情况不应该发生），则添加新消息
+                        chatHistory.push({
+                            role: 'assistant',
+                            content: responseText
+                        });
+                    }
                     
                     // 保存聊天历史
                     await saveCurrentChat();
@@ -1129,6 +1047,11 @@ export function loadAIChat(container) {
             if (regenerateButton) {
                 regenerateButton.style.display = '';  // 恢复默认显示状态
             }
+
+            // 显示复制按钮
+            if (copyButton) {
+                copyButton.style.display = '';  // 恢复默认显示状态
+            }
             
             // 自动滚动到底部
             scrollToBottom();
@@ -1141,10 +1064,25 @@ export function loadAIChat(container) {
             if (regenerateButton) {
                 regenerateButton.style.display = '';  // 恢复默认显示状态
             }
+
+            // 显示复制按钮
+            if (copyButton) {
+                copyButton.style.display = '';  // 恢复默认显示状态
+            }
             
             // 自动滚动到底部
             scrollToBottom();
         }
+    }
+
+    // 复制功能
+    function copyToClipboard(text) {
+        const tempInput = document.createElement('input');
+        tempInput.value = text;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        document.execCommand('copy');
+        document.body.removeChild(tempInput);
     }
 
     // 滚动到底部函数

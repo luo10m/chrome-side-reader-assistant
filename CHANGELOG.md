@@ -4,6 +4,9 @@
 - Fix Chat Input Focus Issue
 - Fix Chat HTML Tag Render Issue
 - Fix Chat History not loading issue
+- Fix Regenerate button not working issue
+- Fix Copy button not working issue
+- Fix Generate Duplicate Message Issue
 
 ## v1.0.4
 - Fix OpenAI API error handling
