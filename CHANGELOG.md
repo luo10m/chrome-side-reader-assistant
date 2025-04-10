@@ -2,6 +2,7 @@
 
 ## v1.0.5
 - Fix Chat Input Focus Issue
+- Fix Chat HTML Tag Render Issue
 - Fix Chat History not loading issue
 
 ## v1.0.4
