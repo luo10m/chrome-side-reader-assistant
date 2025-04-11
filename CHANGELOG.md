@@ -7,6 +7,7 @@
 - Fix Regenerate button not working issue
 - Fix Copy button not working issue
 - Fix Generate Duplicate Message Issue
+- Change Action bar to top of chat input
 
 ## v1.0.4
 - Fix OpenAI API error handling
