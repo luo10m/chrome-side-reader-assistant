@@ -25,8 +25,6 @@ export function loadAIChat(container) {
                 <!-- Welcome message will be added here -->
             </div>
             <div class="chat-input-wrapper">
-                <div class="chat-input-container">
-                    <textarea id="chat-input" data-i18n-placeholder="chat.placeholder" placeholder="Type your message..." rows="1"></textarea>
                     <div class="chat-actions">
                         <button id="new-chat-button" class="action-button" data-i18n-title="chat.newChat" title="New Chat">
                             <img src="assets/svg/new-chat.svg" alt="New Chat" class="button-icon">
@@ -34,6 +32,10 @@ export function loadAIChat(container) {
                         <button id="history-button" class="action-button" data-i18n-title="chat.history" title="Chat History">
                             <img src="assets/svg/history.svg" alt="History" class="button-icon">
                         </button>
+                    </div>
+                <div class="chat-input-container">
+                    <textarea id="chat-input" data-i18n-placeholder="chat.placeholder" placeholder="Type your message..." rows="1"></textarea>
+                    <div class="chat-actions">
                         <button id="send-button" data-i18n-title="chat.send" title="Send">
                             <img src="assets/svg/send.svg" alt="Send" class="button-icon">
                         </button>
