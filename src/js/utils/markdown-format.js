@@ -44,7 +44,7 @@ export function formatMarkdown(text) {
         return `<div class="code-block">
             <div class="code-header">
                 ${language ? `<span class="code-language">${language}</span>` : ''}
-                <button class="copy-button" data-code="${dataCode}">Copy</button>
+                <button class="copy-button" i18n-title="chat.copy" data-code="${dataCode}">Copy</button>
             </div>
             <pre><code${languageClass}>${escapedCode}</code></pre>
         </div>`;
