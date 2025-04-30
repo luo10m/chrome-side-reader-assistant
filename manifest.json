@@ -30,8 +30,8 @@
   "commands": {
     "_execute_action": {
       "suggested_key": {
-        "default": "Ctrl+Y",
-        "mac": "Command+Y"
+        "default": "Ctrl+K",
+        "mac": "Command+K"
       },
       "description": "Open Side-AI"
     }
@@ -43,8 +43,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["src/js/content-script.js"]
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/js/content-script.js"
+      ]
     }
   ],
   "web_accessible_resources": [
@@ -54,10 +58,12 @@
         "src/external/styles/*",
         "locale/*"
       ],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   }
-} 
+}
