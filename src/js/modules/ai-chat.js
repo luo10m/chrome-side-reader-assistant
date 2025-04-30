@@ -453,7 +453,6 @@ export function loadAIChat(container) {
             actionsElement.innerHTML = `
                 <button class="action-button action-copy-button" title="${t('chat.copy')}">
                     <img src="assets/svg/copy.svg" alt="Copy" class="button-icon">
-                    ${t('chat.copy')}
                 </button>
             `;
             messageElement.appendChild(actionsElement);
@@ -647,7 +646,6 @@ export function loadAIChat(container) {
             actionsElement.innerHTML = `
                 <button class="action-button action-copy-button" title="${t('chat.copy')}">
                     <img src="assets/svg/copy.svg" alt="Copy" class="button-icon">
-                    ${t('chat.copy')}
                 </button>
             `;
             assistantMessageElement.appendChild(actionsElement);
