@@ -377,9 +377,29 @@ export function loadAIChat(container) {
     }
     
     // 新增：添加消息到UI
-    function addMessageToUI(role, content) {
+    function addMessageToUI(role, content, type = null) {
         const messageElement = document.createElement('div');
         messageElement.className = `message ${role}`;
+        
+        // 如果是摘要类型消息，添加额外的类名
+        if (type === 'summary') {
+            messageElement.classList.add('summary-message');
+            
+            // 添加摘要标题
+            const titleElement = document.createElement('div');
+            titleElement.className = 'summary-title';
+            
+            // 尝试获取当前页面标题，如果没有就使用通用标题
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs && tabs.length > 0) {
+                    titleElement.textContent = `摘要: ${tabs[0].title}`;
+                } else {
+                    titleElement.textContent = `页面摘要`;
+                }
+            });
+            
+            messageElement.appendChild(titleElement);
+        }
         
         // 为助手消息添加模型标识
         if (role === 'assistant') {
@@ -488,7 +508,8 @@ export function loadAIChat(container) {
         // 添加用户消息到聊天历史
         chatHistory.push({
             role: 'user',
-            content: message
+            content: message,
+            timestamp: Date.now()
         });
         
         // 保存更新后的消息历史
@@ -524,10 +545,18 @@ export function loadAIChat(container) {
             // 获取设置
             const settings = await getSettings();
             
+            // 准备发送给API的聊天历史 - 只保留必要字段，移除自定义属性
+            const apiChatHistory = chatHistory.map(msg => ({
+                role: msg.role,
+                content: msg.content
+            }));
+            
+            console.log('准备发送给API的消息历史:', apiChatHistory);
+            
             // 根据默认AI提供商选择API
             if (settings.defaultAI === 'openai') {
-                // 使用OpenAI API
-                const response = await sendMessageToOpenAI(message, chatHistory, settings.systemPrompt);
+                // 使用OpenAI API，传递过滤后的历史记录
+                const response = await sendMessageToOpenAI(message, apiChatHistory, settings.systemPrompt);
                 
                 // 移除加载指示器
                 loadingIndicator.remove();
@@ -575,7 +604,8 @@ export function loadAIChat(container) {
                     // 添加助手消息到聊天历史
                     chatHistory.push({
                         role: 'assistant',
-                        content: fullText
+                        content: fullText,
+                        timestamp: Date.now()
                     });
                     
                     // 保存更新后的消息历史
@@ -587,15 +617,16 @@ export function loadAIChat(container) {
                     // 添加助手消息到聊天历史
                     chatHistory.push({
                         role: 'assistant',
-                        content: response.fullResponse
+                        content: response.fullResponse,
+                        timestamp: Date.now()
                     });
                     
                     // 保存更新后的消息历史
                     saveChatHistory(chatHistory);
                 }
             } else {
-                // 使用Ollama API
-                const response = await sendMessageToOllama(message, chatHistory);
+                // 使用Ollama API，传递过滤后的历史记录
+                const response = await sendMessageToOllama(message, apiChatHistory);
                 
                 // 移除加载指示器
                 loadingIndicator.remove();
@@ -607,7 +638,8 @@ export function loadAIChat(container) {
                 // 添加助手消息到聊天历史
                 chatHistory.push({
                     role: 'assistant',
-                    content: content
+                    content: content,
+                    timestamp: Date.now()
                 });
                 
                 // 保存更新后的消息历史
@@ -653,7 +685,7 @@ export function loadAIChat(container) {
         }
     }
     
-    // 添加：加载当前标签页的聊天历史
+    // 修复：加载当前标签页的聊天历史 - 正确处理复杂的消息对象
     function loadChatHistory(tabId) {
         // 显示加载状态
         const loadingElement = document.createElement('div');
@@ -662,14 +694,17 @@ export function loadAIChat(container) {
         chatMessages.innerHTML = '';
         chatMessages.appendChild(loadingElement);
         
+        console.log('加载标签页的聊天历史:', tabId);
+        
         // 从存储中获取该标签页的消息历史
         chrome.storage.local.get(['pageMessages_' + tabId], (result) => {
             // 清空当前显示的消息
             chatMessages.innerHTML = '';
             
             const messages = result['pageMessages_' + tabId] || [];
+            console.log('获取到消息历史:', messages);
             
-            // 更新本地聊天历史
+            // 更新本地聊天历史 - 保留所有消息包括摘要
             chatHistory = messages.filter(msg => msg.role !== 'system');
             
             // 如果没有历史消息，显示默认欢迎消息
@@ -678,16 +713,16 @@ export function loadAIChat(container) {
                 return;
             }
             
-            // 渲染历史消息
+            // 渲染历史消息，传递type参数以正确显示摘要
             messages.forEach(msg => {
                 if (msg.role !== 'system') {
-                    addMessageToUI(msg.role, msg.content);
+                    addMessageToUI(msg.role, msg.content, msg.type);
                 }
             });
         });
     }
     
-    // 添加：保存聊天记录到当前标签页
+    // 新增：保存聊天记录到当前标签页
     function saveChatHistory(messages) {
         if (!currentTabId) return;
         
@@ -708,7 +743,7 @@ export function loadAIChat(container) {
         });
     }
     
-    // 添加：初始化标签页关联
+    // 新增：初始化标签页关联
     function initCurrentTab() {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs && tabs.length > 0) {

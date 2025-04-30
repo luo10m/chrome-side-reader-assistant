@@ -9,7 +9,7 @@ const defaultSettings = {
     ollamaModel: 'qwen2.5:7b',
     theme: 'light',
     language: 'en',
-    defaultAI: 'ollama',
+    defaultAI: 'openai',
     useProxy: false,
     useStreaming: true,
     loadLastChat: true,
@@ -326,7 +326,127 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
         
         return true; // 保持消息通道打开
+    }
+    // 处理获取设置请求
+    else if (request.action === 'getSettings') {
+        // 返回当前设置
+        sendResponse(currentSettings);
+        return true;
     } 
+    // 处理更新设置请求
+    else if (request.action === 'updateSettings') {
+        // 检查是否是重置设置请求
+        if (request.settings && request.settings.reset === true) {
+            // 重置为默认设置
+            currentSettings = { ...defaultSettings };
+            chrome.storage.local.set({ settings: currentSettings }, () => {
+                sendResponse(currentSettings);
+            });
+        } else {
+            // 正常更新设置
+            saveSettings(request.settings)
+                .then(() => {
+                    sendResponse(currentSettings);
+                })
+                .catch(error => {
+                    sendResponse({ error: error.message });
+                });
+        }
+        
+        // 返回 true 表示响应将异步发送
+        return true;
+    }
+    // 处理发送消息到Ollama
+    else if (request.action === 'sendMessageToOllama') {
+        // 创建一个唯一的消息ID
+        const messageId = Date.now().toString();
+        
+        // 发送初始响应
+        sendResponse({ messageId });
+        
+        // 处理请求
+        sendMessageToOllama(request.message, request.history, request.systemPrompt)
+            .then(async (response) => {
+                if (response.streaming) {
+                    // 处理流式响应
+                    const { reader, decoder } = response;
+                    let fullResponse = '';
+                    
+                    try {
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            
+                            if (done) {
+                                // 流结束，发送完整响应
+                                chrome.runtime.sendMessage({
+                                    action: 'ollamaResponse',
+                                    messageId,
+                                    done: true,
+                                    content: fullResponse
+                                });
+                                break;
+                            }
+                            
+                            // 解码数据块
+                            const chunk = decoder.decode(value, { stream: true });
+                            
+                            // 处理数据块
+                            try {
+                                const lines = chunk.split('\n').filter(line => line.trim());
+                                
+                                for (const line of lines) {
+                                    try {
+                                        const data = JSON.parse(line);
+                                        
+                                        if (data.response) {
+                                            fullResponse += data.response;
+                                            
+                                            // 发送增量更新
+                                            chrome.runtime.sendMessage({
+                                                action: 'ollamaResponse',
+                                                messageId,
+                                                done: false,
+                                                content: data.response
+                                            });
+                                        }
+                                    } catch (e) {
+                                        console.debug('Error parsing JSON line:', e);
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('Error processing chunk:', e);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error reading stream:', error);
+                        chrome.runtime.sendMessage({
+                            action: 'ollamaError',
+                            messageId,
+                            error: error.message
+                        });
+                    }
+                } else {
+                    // 非流式响应，直接发送
+                    chrome.runtime.sendMessage({
+                        action: 'ollamaResponse',
+                        messageId,
+                        done: true,
+                        content: response.fullResponse
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error sending message to Ollama:', error);
+                chrome.runtime.sendMessage({
+                    action: 'ollamaError',
+                    messageId,
+                    error: error.message
+                });
+            });
+        
+        return true;
+    }
+    // 处理其他类型的请求
     // ...其他处理...
     return true; // 保持通道打开
 });
@@ -384,4 +504,99 @@ async function processSummarizeRequest(tabId, sendResponse) {
     }
 }
 
-// ...其他代码...
+// 恢复: Send message to Ollama with streaming support
+async function sendMessageToOllama(message, history, systemPrompt) {
+    try {
+        // Use settings for Ollama URL and model
+        let ollamaUrl = currentSettings.ollamaUrl;
+        const ollamaModel = currentSettings.ollamaModel;
+        const useProxy = currentSettings.useProxy;
+        const useStreaming = currentSettings.useStreaming !== false; // 默认启用
+        
+        // if proxy is enabled, use a CORS proxy
+        if (useProxy) {
+            ollamaUrl = `https://cors-anywhere.herokuapp.com/${ollamaUrl}`;
+        }
+        
+        console.log(`Sending request to ${ollamaUrl} with model ${ollamaModel}`);
+        
+        // build the prompt text, including history messages and system prompt
+        let prompt = "";
+        
+        // add the system prompt (if any)
+        if (systemPrompt) {
+            prompt += `System: ${systemPrompt}\n`;
+        }
+        
+        // add the history messages (if any)
+        if (history && history.length > 0) {
+            for (const msg of history) {
+                if (msg.role === 'user') {
+                    prompt += `User: ${msg.content}\n`;
+                } else if (msg.role === 'assistant') {
+                    prompt += `Assistant: ${msg.content}\n`;
+                }
+            }
+        }
+        
+        // add the current message
+        prompt += `User: ${message}\nAssistant:`;
+        
+        console.log("Formatted prompt:", prompt);
+        
+        // use fetch API to send the request
+        const response = await fetch(ollamaUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: ollamaModel,
+                prompt: prompt,
+                stream: useStreaming,
+                options: {
+                    num_ctx: 2048,  // set the context window size
+                    include_context: false  // don't include context data, to reduce response size
+                }
+            })
+        });
+        
+        if (!response.ok) {
+            console.error(`Ollama API error: ${response.status}`);
+            const errorText = await response.text();
+            console.error(`Error details: ${errorText}`);
+            throw new Error(`Ollama API error: ${response.status}`);
+        }
+        
+        // if not streaming, return the full response
+        if (!useStreaming) {
+            const data = await response.json();
+            console.log("Ollama response:", data);
+            
+            return {
+                streaming: false,
+                reader: null,
+                decoder: null,
+                fullResponse: data.response || "No response from Ollama",
+                model: data.model || ollamaModel
+            };
+        }
+        
+        // read the streaming response
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+        
+        // return the objects needed for streaming response
+        return {
+            streaming: true,
+            reader,
+            decoder,
+            fullResponse,
+            model: ollamaModel
+        };
+    } catch (error) {
+        console.error('Error sending message to Ollama:', error);
+        throw error;
+    }
+}
