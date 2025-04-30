@@ -12,6 +12,9 @@ export function loadAIChat(container) {
     // Current chat ID
     let currentChatId = null;
     
+    // 添加当前标签页跟踪
+    let currentTabId = null;
+    
     // 在文件顶部添加变量
     let isGenerating = false; // 标记 AI 是否正在生成回复
     let isSummarizing = false; // 标记是否正在生成摘要
@@ -171,9 +174,9 @@ export function loadAIChat(container) {
         });
     }
     
-    // 新增：开始摘要
+    // 新增：开始摘要 - 更新以支持页面级别独立聊天
     function startSummarize() {
-        if (isSummarizing) return;
+        if (isSummarizing || !currentTabId) return;
         
         // 设置状态
         isSummarizing = true;
@@ -208,8 +211,11 @@ export function loadAIChat(container) {
         // 滚动到底部
         chatMessages.scrollTop = chatMessages.scrollHeight;
         
-        // 发送摘要请求
-        chrome.runtime.sendMessage({ action: 'summarizePage' }, (response) => {
+        // 发送摘要请求，包含当前标签页ID
+        chrome.runtime.sendMessage({ 
+            action: 'summarizePage',
+            tabId: currentTabId 
+        }, (response) => {
             if (chrome.runtime.lastError || !response || !response.success) {
                 const error = chrome.runtime.lastError ? 
                     chrome.runtime.lastError.message : 
@@ -226,7 +232,7 @@ export function loadAIChat(container) {
         });
     }
     
-    // 处理摘要流
+    // 修改：处理摘要流，支持页面级别独立聊天
     let fullSummaryContent = ''; // 累积完整的摘要内容
     
     function handleSummaryStream(data) {
@@ -262,6 +268,53 @@ export function loadAIChat(container) {
             copyButton.addEventListener('click', () => {
                 copyToClipboard(summaryContentElement.textContent);
             });
+            
+            // 添加摘要消息到聊天历史
+            if (currentTabId) {
+                // 读取现有消息
+                chrome.storage.local.get(['pageMessages_' + currentTabId], (result) => {
+                    let messages = result['pageMessages_' + currentTabId] || [];
+                    
+                    // 查找现有摘要消息
+                    const summaryIndex = messages.findIndex(m => m.role === 'assistant' && m.type === 'summary');
+                    
+                    if (summaryIndex >= 0) {
+                        // 更新现有摘要
+                        messages[summaryIndex].content = fullSummaryContent;
+                    } else {
+                        // 添加新摘要（在系统消息之后，如果有的话）
+                        const systemIndex = messages.findIndex(m => m.role === 'system');
+                        
+                        // 创建摘要消息对象
+                        const summaryMessage = { 
+                            role: 'assistant', 
+                            content: fullSummaryContent, 
+                            type: 'summary' 
+                        };
+                        
+                        if (systemIndex >= 0) {
+                            // 插入系统消息之后
+                            messages.splice(systemIndex + 1, 0, summaryMessage);
+                        } else if (messages.length > 0) {
+                            // 插入到开头
+                            messages.unshift(summaryMessage);
+                        } else {
+                            // 空消息列表，添加系统消息和摘要
+                            messages = [
+                                { role: 'system', content: 'You are a helpful assistant.' },
+                                summaryMessage
+                            ];
+                        }
+                    }
+                    
+                    // 保存更新后的消息列表
+                    chrome.storage.local.set({
+                        ['pageMessages_' + currentTabId]: messages
+                    }, () => {
+                        console.log('摘要已保存到标签页:', currentTabId);
+                    });
+                });
+            }
         } else {
             // 累积内容，然后一次性渲染
             fullSummaryContent += data.content;
@@ -285,7 +338,7 @@ export function loadAIChat(container) {
         }
     }
     
-    // 新增：处理摘要错误
+    // 处理摘要错误
     function handleSummaryError(data) {
         if (!summaryContentElement) return;
         
@@ -438,6 +491,9 @@ export function loadAIChat(container) {
             content: message
         });
         
+        // 保存更新后的消息历史
+        saveChatHistory(chatHistory);
+        
         // 创建助手消息元素
         const assistantMessageElement = document.createElement('div');
         assistantMessageElement.className = 'message assistant';
@@ -521,6 +577,9 @@ export function loadAIChat(container) {
                         role: 'assistant',
                         content: fullText
                     });
+                    
+                    // 保存更新后的消息历史
+                    saveChatHistory(chatHistory);
                 } else {
                     // 处理非流式响应
                     contentElement.innerHTML = renderMarkdown(response.fullResponse);
@@ -530,6 +589,9 @@ export function loadAIChat(container) {
                         role: 'assistant',
                         content: response.fullResponse
                     });
+                    
+                    // 保存更新后的消息历史
+                    saveChatHistory(chatHistory);
                 }
             } else {
                 // 使用Ollama API
@@ -547,6 +609,9 @@ export function loadAIChat(container) {
                     role: 'assistant',
                     content: content
                 });
+                
+                // 保存更新后的消息历史
+                saveChatHistory(chatHistory);
             }
             
             // 添加复制按钮
@@ -588,6 +653,72 @@ export function loadAIChat(container) {
         }
     }
     
+    // 添加：加载当前标签页的聊天历史
+    function loadChatHistory(tabId) {
+        // 显示加载状态
+        const loadingElement = document.createElement('div');
+        loadingElement.className = 'chat-loading';
+        loadingElement.innerHTML = '<div class="spinner"></div><p>正在加载对话...</p>';
+        chatMessages.innerHTML = '';
+        chatMessages.appendChild(loadingElement);
+        
+        // 从存储中获取该标签页的消息历史
+        chrome.storage.local.get(['pageMessages_' + tabId], (result) => {
+            // 清空当前显示的消息
+            chatMessages.innerHTML = '';
+            
+            const messages = result['pageMessages_' + tabId] || [];
+            
+            // 更新本地聊天历史
+            chatHistory = messages.filter(msg => msg.role !== 'system');
+            
+            // 如果没有历史消息，显示默认欢迎消息
+            if (messages.length === 0) {
+                addWelcomeMessage();
+                return;
+            }
+            
+            // 渲染历史消息
+            messages.forEach(msg => {
+                if (msg.role !== 'system') {
+                    addMessageToUI(msg.role, msg.content);
+                }
+            });
+        });
+    }
+    
+    // 添加：保存聊天记录到当前标签页
+    function saveChatHistory(messages) {
+        if (!currentTabId) return;
+        
+        // 检查是否有系统消息
+        const hasSystemMessage = messages.some(msg => msg.role === 'system');
+        
+        // 如果没有系统消息，添加一个默认的
+        const messagesWithSystem = hasSystemMessage ? messages : [
+            { role: 'system', content: 'You are a helpful assistant.' },
+            ...messages
+        ];
+        
+        // 保存到特定标签页的消息历史
+        chrome.storage.local.set({
+            ['pageMessages_' + currentTabId]: messagesWithSystem
+        }, () => {
+            console.log('聊天记录已保存到标签页:', currentTabId);
+        });
+    }
+    
+    // 添加：初始化标签页关联
+    function initCurrentTab() {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs && tabs.length > 0) {
+                currentTabId = tabs[0].id;
+                console.log('当前标签页ID:', currentTabId);
+                loadChatHistory(currentTabId);
+            }
+        });
+    }
+
     // Add welcome message
     function addWelcomeMessage() {
         const welcomeElement = document.createElement('div');
@@ -631,19 +762,43 @@ export function loadAIChat(container) {
     initSummaryButton();
     
     // 新增：标签页切换时更新摘要按钮状态
-    chrome.tabs.onActivated.addListener(() => {
+    chrome.tabs.onActivated.addListener((activeInfo) => {
+        currentTabId = activeInfo.tabId;
+        console.log('标签页切换至:', currentTabId);
+        loadChatHistory(currentTabId);
+        
+        // 更新摘要按钮状态
         setTimeout(initSummaryButton, 300);
     });
     
-    // 新增：标签页更新时更新摘要按钮状态
+    // 新增：标签页更新时更新摘要按钮状态和聊天历史
     chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-        if (changeInfo.status === 'complete') {
-            setTimeout(initSummaryButton, 300);
+        if (changeInfo.status === 'complete' && tabId === currentTabId) {
+            setTimeout(() => {
+                initSummaryButton();
+                loadChatHistory(currentTabId);
+            }, 300);
+        }
+    });
+    
+    // 新增：绑定新对话按钮事件 - 清空当前标签页历史
+    newChatButton.addEventListener('click', () => {
+        if (!currentTabId) return;
+        
+        // 确认是否清空当前对话
+        if (confirm(t('chat.confirmNewChat', '确定要开始新对话吗？这将清空当前页面的所有消息。'))) {
+            // 清空聊天历史
+            chatHistory = [];
+            saveChatHistory(chatHistory);
+            
+            // 清空UI
+            chatMessages.innerHTML = '';
+            addWelcomeMessage();
         }
     });
     
     // 初始化
     addWelcomeMessage();
-    initSummaryButton();
+    initCurrentTab(); // 替换 initSummaryButton() 为主要初始化函数
     adjustTextareaHeight();
 }

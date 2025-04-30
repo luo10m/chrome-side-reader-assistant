@@ -59,8 +59,11 @@ function saveSettings(settings) {
     });
 }
 
-// 新增：更新页面缓存并保存到storage
+// 修改：更新页面缓存函数，增加对tabId的处理
 function upsertPageCache(tabId, url, title, content) {
+    // 确保tabId存在
+    if (!tabId) return;
+    
     // 更新缓存
     pageCache[tabId] = {
         url,
@@ -130,7 +133,7 @@ function cacheHistory(url, title, pageText, summaryText) {
     });
 }
 
-// 新增：使用OpenAI API生成摘要
+// 修改：使用OpenAI API生成摘要，支持标签页ID
 async function summarizeWithOpenAI(tabId, url, title, content) {
     const apiKey = currentSettings.openaiApiKey;
     if (!apiKey) throw new Error('OpenAI API Key is not configured');
@@ -199,49 +202,65 @@ async function summarizeWithOpenAI(tabId, url, title, content) {
                     done: true,
                     content: fullResponse
                 });
-                
-                // 保存到历史记录
-                await cacheHistory(url, title, truncatedContent, fullResponse);
+
                 break;
             }
             
             // 解码数据块
-            const chunk = decoder.decode(value);
+            const chunk = decoder.decode(value, { stream: true });
             
-            // 处理SSE格式
-            const lines = chunk.split('\n').filter(line => line.trim() !== '' && line.trim() !== 'data: [DONE]');
-            
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    try {
-                        const data = JSON.parse(line.substring(6));
-                        if (data.choices && data.choices[0]?.delta?.content) {
-                            const content = data.choices[0].delta.content;
-                            fullResponse += content;
+            if (chunk) {
+                try {
+                    // 处理 SSE 格式的数据块
+                    const lines = chunk.split('\n');
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.substring(6);
+                            // 检查是否为 [DONE] 标记
+                            if (data === '[DONE]') continue;
                             
-                            // 发送增量更新
-                            chrome.runtime.sendMessage({
-                                action: 'summaryStream',
-                                messageId,
-                                done: false,
-                                content: content
-                            });
+                            // 解析 JSON 数据
+                            try {
+                                const json = JSON.parse(data);
+                                const content = json.choices?.[0]?.delta?.content || '';
+                                
+                                if (content) {
+                                    fullResponse += content;
+                                    
+                                    // 发送更新消息
+                                    chrome.runtime.sendMessage({
+                                        action: 'summaryStream',
+                                        messageId,
+                                        done: false,
+                                        content: content
+                                    });
+                                }
+                            } catch (e) {
+                                console.error('Failed to parse JSON from stream:', e);
+                            }
                         }
-                    } catch (e) {
-                        console.debug('Error parsing JSON from stream:', e);
                     }
+                } catch (e) {
+                    console.error('Error processing chunk:', e);
                 }
             }
         }
         
+        // 摘要完成后，保存到页面缓存
+        pageCache[tabId] = {
+            ...pageCache[tabId],
+            summary: fullResponse,
+            summaryTime: Date.now()
+        };
+        chrome.storage.local.set({ pageCache });
+        
         return fullResponse;
     } catch (error) {
-        console.error('Error summarizing with OpenAI:', error);
+        console.error('Summarization error:', error);
         
         // 发送错误消息
         chrome.runtime.sendMessage({
             action: 'summaryError',
-            messageId,
             error: error.message
         });
         
@@ -263,335 +282,106 @@ chrome.commands.onCommand.addListener((command) => {
     }
 });
 
-// listen for messages from content script
+// 监听消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    // 新增：处理页面内容消息
+    // 处理页面内容消息
     if (request.action === 'pageContent') {
         const tabId = sender.tab ? sender.tab.id : null;
         if (tabId) {
-            upsertPageCache(tabId, request.url, request.title, request.content);
+            // 确保有页面内容
+            if (request.content) {
+                // 更新缓存
+                upsertPageCache(tabId, request.url, request.title, request.content);
+                sendResponse({ success: true });
+            } else {
+                sendResponse({ success: false, error: 'No content provided' });
+            }
+        } else {
+            sendResponse({ success: false, error: 'No tab ID available' });
         }
-        sendResponse({ success: true });
-        return false;
-    }
-    
-    // 新增：处理摘要请求
+        return true; // 保持消息通道打开
+    } 
+    // 处理摘要请求
     else if (request.action === 'summarizePage') {
-        // 获取当前活动标签页
-        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-            try {
+        // 使用请求中的tabId或尝试获取当前活动标签页
+        let targetTabId = request.tabId;
+        
+        // 如果没有提供特定的tabId，则尝试获取当前标签页
+        if (!targetTabId) {
+            chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
                 if (tabs.length === 0) {
-                    throw new Error('No active tab found');
+                    sendResponse({ success: false, error: 'No active tab found' });
+                    return;
                 }
                 
-                const tabId = tabs[0].id;
-                const tabInfo = pageCache[tabId];
+                const currentTab = tabs[0];
+                targetTabId = currentTab.id;
                 
-                if (!tabInfo) {
-                    throw new Error('No content found for current tab. Please refresh the page and try again.');
-                }
-                
-                // 验证URL是否匹配
-                if (tabs[0].url !== tabInfo.url) {
-                    throw new Error('Tab URL has changed since content was cached. Please refresh the page and try again.');
-                }
-                
-                // 生成摘要
-                summarizeWithOpenAI(tabId, tabInfo.url, tabInfo.title, tabInfo.content)
-                    .catch(error => {
-                        console.error('Error in summarization:', error);
-                        chrome.runtime.sendMessage({
-                            action: 'summaryError',
-                            error: error.message
-                        });
+                // 处理摘要请求
+                await processSummarizeRequest(targetTabId, sendResponse);
+            });
+        } else {
+            // 使用提供的tabId处理摘要请求
+            processSummarizeRequest(targetTabId, sendResponse);
+        }
+        
+        return true; // 保持消息通道打开
+    } 
+    // ...其他处理...
+    return true; // 保持通道打开
+});
+
+// 新增：处理摘要请求的函数
+async function processSummarizeRequest(tabId, sendResponse) {
+    try {
+        // 检查缓存中是否有页面内容
+        if (!pageCache[tabId]) {
+            // 尝试获取页面内容
+            chrome.tabs.sendMessage(tabId, { action: 'extractPageContent' }, (response) => {
+                if (chrome.runtime.lastError || !response || !response.success) {
+                    sendResponse({ 
+                        success: false, 
+                        error: chrome.runtime.lastError ? 
+                            chrome.runtime.lastError.message : 
+                            'Failed to extract page content' 
                     });
-                
-                sendResponse({ success: true, processing: true });
-            } catch (error) {
-                console.error('Error processing summarize request:', error);
-                chrome.runtime.sendMessage({
-                    action: 'summaryError',
-                    error: error.message
-                });
-                sendResponse({ success: false, error: error.message });
-            }
-        });
-        
-        return true; // 异步响应
-    }
-    
-    else if (request.action === 'sendMessageToOllama') {
-        // 创建一个唯一的消息ID
-        const messageId = Date.now().toString();
-        
-        // 发送初始响应
-        sendResponse({ messageId });
-        
-        // 处理请求
-        sendMessageToOllama(request.message, request.history, request.systemPrompt)
-            .then(async (response) => {
-                if (response.streaming) {
-                    // 处理流式响应
-                    const { reader, decoder } = response;
-                    let fullResponse = '';
-                    
-                    try {
-                        while (true) {
-                            const { done, value } = await reader.read();
-                            
-                            if (done) {
-                                // 流结束，发送完整响应
-                                chrome.runtime.sendMessage({
-                                    action: 'ollamaResponse',
-                                    messageId,
-                                    done: true,
-                                    content: fullResponse
-                                });
-                                break;
-                            }
-                            
-                            // 解码数据块
-                            const chunk = decoder.decode(value, { stream: true });
-                            
-                            // 处理数据块
-                            try {
-                                const lines = chunk.split('\n').filter(line => line.trim());
-                                
-                                for (const line of lines) {
-                                    try {
-                                        const data = JSON.parse(line);
-                                        
-                                        if (data.response) {
-                                            fullResponse += data.response;
-                                            
-                                            // 发送增量更新
-                                            chrome.runtime.sendMessage({
-                                                action: 'ollamaResponse',
-                                                messageId,
-                                                done: false,
-                                                content: data.response
-                                            });
-                                        }
-                                    } catch (e) {
-                                        console.debug('Error parsing JSON line:', e);
-                                    }
-                                }
-                            } catch (e) {
-                                console.error('Error processing chunk:', e);
-                            }
-                        }
-                    } catch (error) {
-                        console.error('Error reading stream:', error);
-                        chrome.runtime.sendMessage({
-                            action: 'ollamaError',
-                            messageId,
-                            error: error.message
-                        });
-                    }
                 } else {
-                    // 非流式响应，直接发送
-                    chrome.runtime.sendMessage({
-                        action: 'ollamaResponse',
-                        messageId,
-                        done: true,
-                        content: response.fullResponse
-                    });
+                    // 内容已保存到缓存，可以继续处理
+                    sendResponse({ success: true });
                 }
-            })
-            .catch(error => {
-                console.error('Error sending message to Ollama:', error);
-                chrome.runtime.sendMessage({
-                    action: 'ollamaError',
-                    messageId,
-                    error: error.message
-                });
             });
+            return;
+        }
         
-        return true;
-    } else if (request.action === 'getSettings') {
-        // return the current settings
-        sendResponse(currentSettings);
-        return false;
-    } else if (request.action === 'updateSettings') {
-        // 检查是否是重置设置请求
-        if (request.settings && request.settings.reset === true) {
-            // 重置为默认设置
-            currentSettings = { ...defaultSettings };
-            chrome.storage.local.set({ settings: currentSettings }, () => {
-                sendResponse(currentSettings);
-            });
+        // 获取缓存的页面内容
+        const pageInfo = pageCache[tabId];
+        
+        // 确保有内容可以摘要
+        if (!pageInfo || !pageInfo.content) {
+            sendResponse({ success: false, error: 'No content available for summarization' });
+            return;
+        }
+        
+        // 发送成功响应，表示开始处理摘要
+        sendResponse({ success: true });
+        
+        // 使用 OpenAI API 生成摘要
+        const settings = await loadSettings();
+        if (settings.defaultAI === 'openai' && settings.openaiApiKey) {
+            await summarizeWithOpenAI(tabId, pageInfo.url, pageInfo.title, pageInfo.content);
         } else {
-            // 正常更新设置
-            saveSettings(request.settings)
-                .then(() => {
-                    sendResponse(currentSettings);
-                })
-                .catch(error => {
-                    sendResponse({ error: error.message });
-                });
-        }
-        
-        // 返回 true 表示响应将异步发送
-        return true;
-    } else if (request.action === 'fetchTranslation') {
-        fetch(request.url)
-            .then(response => response.text())
-            .then(data => {
-                sendResponse({ data: data });
-            })
-            .catch(error => {
-                console.error('Error fetching translation:', error);
-                sendResponse({ error: error.message });
+            // 其他 AI 服务的处理...或者报错
+            chrome.runtime.sendMessage({
+                action: 'summaryError',
+                error: settings.defaultAI === 'openai' ? 
+                    'OpenAI API key is not configured' : 
+                    'Only OpenAI is supported for summarization'
             });
-        
-        // 返回 true 表示将异步发送响应
-        return true;
-    }
-});
-
-// Send message to Ollama with streaming support
-async function sendMessageToOllama(message, history, systemPrompt) {
-    try {
-        // Use settings for Ollama URL and model
-        let ollamaUrl = currentSettings.ollamaUrl;
-        const ollamaModel = currentSettings.ollamaModel;
-        const useProxy = currentSettings.useProxy;
-        const useStreaming = currentSettings.useStreaming !== false; // 默认启用
-        
-        // if proxy is enabled, use a CORS proxy
-        if (useProxy) {
-            ollamaUrl = `https://cors-anywhere.herokuapp.com/${ollamaUrl}`;
         }
-        
-        console.log(`Sending request to ${ollamaUrl} with model ${ollamaModel}`);
-        
-        // build the prompt text, including history messages and system prompt
-        let prompt = "";
-        
-        // add the system prompt (if any)
-        if (systemPrompt) {
-            prompt += `System: ${systemPrompt}\n`;
-        }
-        
-        // add the history messages (if any)
-        if (history && history.length > 0) {
-            for (const msg of history) {
-                if (msg.role === 'user') {
-                    prompt += `User: ${msg.content}\n`;
-                } else if (msg.role === 'assistant') {
-                    prompt += `Assistant: ${msg.content}\n`;
-                }
-            }
-        }
-        
-        // add the current message
-        prompt += `User: ${message}\nAssistant:`;
-        
-        console.log("Formatted prompt:", prompt);
-        
-        // use fetch API to send the request
-        const response = await fetch(ollamaUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: ollamaModel,
-                prompt: prompt,
-                stream: useStreaming,
-                options: {
-                    num_ctx: 2048,  // set the context window size
-                    include_context: false  // don't include context data, to reduce response size
-                }
-            })
-        });
-        
-        if (!response.ok) {
-            console.error(`Ollama API error: ${response.status}`);
-            const errorText = await response.text();
-            console.error(`Error details: ${errorText}`);
-            throw new Error(`Ollama API error: ${response.status}`);
-        }
-        
-        // if not streaming, return the full response
-        if (!useStreaming) {
-            const data = await response.json();
-            console.log("Ollama response:", data);
-            
-            return {
-                streaming: false,
-                reader: null,
-                decoder: null,
-                fullResponse: data.response || "No response from Ollama",
-                model: data.model || ollamaModel
-            };
-        }
-        
-        // read the streaming response
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullResponse = '';
-        
-        // return the objects needed for streaming response
-        return {
-            streaming: true,
-            reader,
-            decoder,
-            fullResponse,
-            model: ollamaModel
-        };
     } catch (error) {
-        console.error('Error sending message to Ollama:', error);
-        throw error;
+        console.error('Error processing summarize request:', error);
+        // 错误已经在其他地方处理
     }
 }
 
-// add retry logic
-let retryCount = 0;
-const maxRetries = 3;
-
-async function sendWithRetry() {
-    try {
-        // send request logic...
-    } catch (error) {
-        if (retryCount < maxRetries) {
-            retryCount++;
-            console.log(`Retrying (${retryCount}/${maxRetries})...`);
-            return await sendWithRetry();
-        } else {
-            throw error;
-        }
-    }
-}
-
-// listen for extension installation or update events
-chrome.runtime.onInstalled.addListener(async (details) => {
-    if (details.reason === 'install') {
-        // set default settings
-        const defaultSettings = {
-            // ... existing default settings ...
-            systemPrompt: 'You are a helpful AI assistant. Answer questions concisely and accurately.',
-            // ... existing default settings ...
-        };
-        
-        // save default settings
-        await chrome.storage.local.set({ settings: defaultSettings });
-        console.log('Default settings initialized');
-    }
-});
-
-// add this at the top of background.js, for suppressing specific JSON parsing error warnings
-const originalConsoleWarn = console.warn;
-console.warn = function(...args) {
-    // filter out specific JSON parsing error warnings
-    if (args.length > 0 && 
-        typeof args[0] === 'string' && 
-        args[0].includes('Error parsing JSON line:')) {
-        // log to console, but not as a warning
-        console.debug(...args);
-        return;
-    }
-    
-    // for other warnings, use the original console.warn
-    originalConsoleWarn.apply(console, args);
-};
+// ...其他代码...
