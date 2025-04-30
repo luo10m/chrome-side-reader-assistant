@@ -189,6 +189,12 @@ export function loadAIChat(container) {
             welcomeMessage.remove();
         }
         
+        // 删除现有的摘要消息（如果存在）
+        const existingSummary = document.querySelector('.summary-message');
+        if (existingSummary) {
+            existingSummary.remove();
+        }
+        
         // 创建摘要消息元素
         const messageElement = document.createElement('div');
         messageElement.className = 'message assistant summary-message';
@@ -269,7 +275,7 @@ export function loadAIChat(container) {
                 copyToClipboard(summaryContentElement.textContent);
             });
             
-            // 添加摘要消息到聊天历史
+            // 添加或更新摘要消息到聊天历史
             if (currentTabId) {
                 // 读取现有消息
                 chrome.storage.local.get(['pageMessages_' + currentTabId], (result) => {
@@ -321,17 +327,6 @@ export function loadAIChat(container) {
             
             // 直接渲染完整内容
             summaryContentElement.innerHTML = renderMarkdown(fullSummaryContent);
-            
-            // 高亮代码块
-            if (typeof hljs !== 'undefined') {
-                try {
-                    summaryContentElement.querySelectorAll('pre code').forEach((block) => {
-                        hljs.highlightElement(block);
-                    });
-                } catch (e) {
-                    console.debug('Error during code highlighting:', e);
-                }
-            }
             
             // 滚动到底部
             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -714,8 +709,13 @@ export function loadAIChat(container) {
             }
             
             // 渲染历史消息，传递type参数以正确显示摘要
+            let summaryAdded = false;
             messages.forEach(msg => {
                 if (msg.role !== 'system') {
+                    // 如果是摘要类型，标记已添加摘要
+                    if (msg.type === 'summary') {
+                        summaryAdded = true;
+                    }
                     addMessageToUI(msg.role, msg.content, msg.type);
                 }
             });
