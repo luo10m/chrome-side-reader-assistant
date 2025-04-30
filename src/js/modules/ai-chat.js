@@ -1,6 +1,6 @@
 // Import the API service and markdown renderer
 import { sendMessageToOllama, getSettings } from '../services/ollama-service.js';
-import { sendMessageToOpenAI } from '../services/openai-service.js';
+import { sendMessageToOpenAI, parseOpenAIStreamingResponse } from '../services/openai-service.js';
 import { renderMarkdown } from '../utils/markdown-renderer.js';
 import { t } from '../utils/i18n.js';
 
@@ -14,12 +14,26 @@ export function loadAIChat(container) {
     
     // 在文件顶部添加变量
     let isGenerating = false; // 标记 AI 是否正在生成回复
+    let isSummarizing = false; // 标记是否正在生成摘要
+    let currentSummaryMessageId = null; // 当前摘要消息的ID
+    let summaryContentElement = null; // 摘要内容元素
+    let streamingMessageElement = null; // 用于流式响应的消息元素
     
     // Create chat UI with redesigned layout
     container.innerHTML = `
         <div class="chat-container">
             <div class="chat-header">
                 <h2 data-i18n="chat.header">AI Chat</h2>
+                <div class="chat-header-actions">
+                    <button id="summarize-btn" class="primary-button" data-i18n="chat.summarize">开始摘要</button>
+                </div>
+            </div>
+            <div id="page-info" class="page-info-container" style="display: none;">
+                <div class="page-info-content">
+                    <div id="page-title" class="page-title"></div>
+                    <div id="page-url" class="page-url"></div>
+                </div>
+                <button id="refresh-page-content" class="secondary-button" data-i18n="chat.refreshContent">刷新内容</button>
             </div>
             <div class="chat-messages" id="chat-messages">
                 <!-- Welcome message will be added here -->
@@ -70,23 +84,275 @@ export function loadAIChat(container) {
     const closeHistoryButton = document.getElementById('close-history');
     const historyList = document.getElementById('history-list');
     
-    // Add welcome message
-    function addWelcomeMessage() {
-        const welcomeElement = document.createElement('div');
-        welcomeElement.className = 'message assistant welcome-message';
-        
-        const contentElement = document.createElement('div');
-        contentElement.className = 'message-content';
-        contentElement.innerHTML = renderMarkdown(t('chat.welcomeMessage', 'Hi, How can I help you today?'));
-        
-        welcomeElement.appendChild(contentElement);
-        chatMessages.appendChild(welcomeElement);
+    // 新增：摘要相关元素
+    const summarizeButton = document.getElementById('summarize-btn');
+    const pageInfoContainer = document.getElementById('page-info');
+    const pageTitleElement = document.getElementById('page-title');
+    const pageUrlElement = document.getElementById('page-url');
+    const refreshPageContentButton = document.getElementById('refresh-page-content');
+    
+    // 新增：初始化摘要按钮
+    function initSummaryButton() {
+        // 查询当前活动标签页，获取页面信息
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs.length > 0) {
+                const currentTab = tabs[0];
+                const tabId = currentTab.id;
+                
+                // 显示当前页面信息
+                updatePageInfo(currentTab.title, currentTab.url);
+                
+                // 检查是否有页面缓存
+                chrome.runtime.sendMessage({ action: 'getSettings' }, (settings) => {
+                    chrome.storage.local.get(['pageCache'], (result) => {
+                        const pageCache = result.pageCache || {};
+                        const tabInfo = pageCache[tabId];
+                        
+                        if (tabInfo && tabInfo.url === currentTab.url) {
+                            // 有缓存且URL匹配，启用摘要按钮
+                            summarizeButton.disabled = false;
+                            pageInfoContainer.style.display = 'flex';
+                            pageTitleElement.textContent = tabInfo.title || '未知标题';
+                            pageUrlElement.textContent = tabInfo.url;
+                        } else {
+                            // 无缓存或URL不匹配，禁用摘要按钮
+                            summarizeButton.disabled = true;
+                            pageInfoContainer.style.display = 'none';
+                        }
+                    });
+                });
+            } else {
+                // 没有活动标签页，禁用摘要按钮
+                summarizeButton.disabled = true;
+                pageInfoContainer.style.display = 'none';
+            }
+        });
     }
     
-    // Function to add message to UI
+    // 新增：更新页面信息显示
+    function updatePageInfo(title, url) {
+        if (title && url) {
+            pageInfoContainer.style.display = 'flex';
+            pageTitleElement.textContent = title;
+            pageUrlElement.textContent = url;
+        } else {
+            pageInfoContainer.style.display = 'none';
+        }
+    }
+    
+    // 新增：刷新页面内容
+    function refreshPageContent() {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs.length > 0) {
+                const tabId = tabs[0].id;
+                
+                // 向内容脚本发送消息，请求重新抓取内容
+                chrome.tabs.sendMessage(tabId, { action: 'extractPageContent' }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('Error sending message to content script:', chrome.runtime.lastError);
+                        // 尝试重新注入内容脚本
+                        chrome.tabs.executeScript(tabId, { file: 'src/js/content-script.js' }, () => {
+                            if (chrome.runtime.lastError) {
+                                console.error('Failed to inject content script:', chrome.runtime.lastError);
+                            } else {
+                                // 脚本注入成功后，再次尝试发送消息
+                                setTimeout(() => {
+                                    chrome.tabs.sendMessage(tabId, { action: 'extractPageContent' });
+                                }, 500);
+                            }
+                        });
+                    } else if (response && response.success) {
+                        // 内容已刷新，更新UI
+                        updatePageInfo(tabs[0].title, tabs[0].url);
+                        summarizeButton.disabled = false;
+                    }
+                });
+            }
+        });
+    }
+    
+    // 新增：开始摘要
+    function startSummarize() {
+        if (isSummarizing) return;
+        
+        // 设置状态
+        isSummarizing = true;
+        summarizeButton.disabled = true;
+        summarizeButton.textContent = t('chat.summarizing', '正在摘要...');
+        
+        // 删除欢迎消息（如果存在）
+        const welcomeMessage = document.querySelector('.welcome-message');
+        if (welcomeMessage) {
+            welcomeMessage.remove();
+        }
+        
+        // 创建摘要消息元素
+        const messageElement = document.createElement('div');
+        messageElement.className = 'message assistant summary-message';
+        
+        // 创建标题元素，显示当前页面信息
+        const titleElement = document.createElement('div');
+        titleElement.className = 'summary-title';
+        titleElement.textContent = `摘要: ${pageTitleElement.textContent}`;
+        messageElement.appendChild(titleElement);
+        
+        // 创建内容元素
+        summaryContentElement = document.createElement('div');
+        summaryContentElement.className = 'message-content';
+        summaryContentElement.innerHTML = '<div class="loading-indicator">正在生成摘要...</div>';
+        messageElement.appendChild(summaryContentElement);
+        
+        // 添加到消息列表
+        chatMessages.appendChild(messageElement);
+        
+        // 滚动到底部
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        
+        // 发送摘要请求
+        chrome.runtime.sendMessage({ action: 'summarizePage' }, (response) => {
+            if (chrome.runtime.lastError || !response || !response.success) {
+                const error = chrome.runtime.lastError ? 
+                    chrome.runtime.lastError.message : 
+                    (response && response.error ? response.error : '未知错误');
+                
+                // 显示错误
+                summaryContentElement.innerHTML = `<div class="error-message">摘要生成失败: ${error}</div>`;
+                
+                // 重置状态
+                isSummarizing = false;
+                summarizeButton.disabled = false;
+                summarizeButton.textContent = t('chat.summarize', '开始摘要');
+            }
+        });
+    }
+    
+    // 处理摘要流
+    let fullSummaryContent = ''; // 累积完整的摘要内容
+    
+    function handleSummaryStream(data) {
+        if (!summaryContentElement) return;
+        
+        if (currentSummaryMessageId === null) {
+            currentSummaryMessageId = data.messageId;
+            summaryContentElement.innerHTML = ''; // 清除加载指示器
+            fullSummaryContent = ''; // 重置累积内容
+        }
+        
+        if (data.messageId !== currentSummaryMessageId) return;
+        
+        if (data.done) {
+            // 摘要完成
+            isSummarizing = false;
+            summarizeButton.disabled = false;
+            summarizeButton.textContent = t('chat.summarize', '开始摘要');
+            currentSummaryMessageId = null;
+            
+            // 添加操作按钮
+            const actionsElement = document.createElement('div');
+            actionsElement.className = 'message-actions';
+            actionsElement.innerHTML = `
+                <button class="action-copy-button" title="${t('chat.copy')}">
+                    <img src="assets/svg/copy.svg" alt="Copy" class="button-icon">
+                </button>
+            `;
+            summaryContentElement.parentElement.appendChild(actionsElement);
+            
+            // 添加复制功能
+            const copyButton = actionsElement.querySelector('.action-copy-button');
+            copyButton.addEventListener('click', () => {
+                copyToClipboard(summaryContentElement.textContent);
+            });
+        } else {
+            // 累积内容，然后一次性渲染
+            fullSummaryContent += data.content;
+            
+            // 直接渲染完整内容
+            summaryContentElement.innerHTML = renderMarkdown(fullSummaryContent);
+            
+            // 高亮代码块
+            if (typeof hljs !== 'undefined') {
+                try {
+                    summaryContentElement.querySelectorAll('pre code').forEach((block) => {
+                        hljs.highlightElement(block);
+                    });
+                } catch (e) {
+                    console.debug('Error during code highlighting:', e);
+                }
+            }
+            
+            // 滚动到底部
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    }
+    
+    // 新增：处理摘要错误
+    function handleSummaryError(data) {
+        if (!summaryContentElement) return;
+        
+        // 显示错误
+        summaryContentElement.innerHTML = `<div class="error-message">摘要生成失败: ${data.error}</div>`;
+        
+        // 重置状态
+        isSummarizing = false;
+        summarizeButton.disabled = false;
+        summarizeButton.textContent = t('chat.summarize', '开始摘要');
+        currentSummaryMessageId = null;
+    }
+    
+    // 新增：复制到剪贴板函数
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            // 可以添加一个提示，表示复制成功
+            console.log('Text copied to clipboard');
+        }).catch(err => {
+            console.error('Failed to copy text: ', err);
+        });
+    }
+    
+    // 新增：自动调整文本区域高度
+    function adjustTextareaHeight() {
+        if (!chatInput) return;
+        
+        chatInput.style.height = 'auto';
+        chatInput.style.height = (chatInput.scrollHeight) + 'px';
+        
+        // 添加输入事件监听器，实时调整高度
+        chatInput.addEventListener('input', () => {
+            chatInput.style.height = 'auto';
+            chatInput.style.height = (chatInput.scrollHeight) + 'px';
+        });
+    }
+    
+    // 新增：添加消息到UI
     function addMessageToUI(role, content) {
         const messageElement = document.createElement('div');
         messageElement.className = `message ${role}`;
+        
+        // 为助手消息添加模型标识
+        if (role === 'assistant') {
+            // 获取当前使用的模型
+            getSettings().then(settings => {
+                const modelName = settings.defaultAI === 'openai' 
+                    ? (settings.openaiModel || 'gpt-3.5-turbo')
+                    : (settings.ollamaModel || 'llama2');
+                
+                // 设置模型属性用于CSS显示
+                messageElement.setAttribute('data-model', modelName);
+                
+                // 添加模型图标和名称
+                const modelIndicator = document.createElement('div');
+                modelIndicator.className = 'model-indicator';
+                modelIndicator.innerHTML = `
+                    <span class="model-icon">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2L20 7V17L12 22L4 17V7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </span>
+                    ${modelName}
+                `;
+                messageElement.insertBefore(modelIndicator, messageElement.firstChild);
+            });
+        }
         
         const contentElement = document.createElement('div');
         contentElement.className = 'message-content';
@@ -102,19 +368,9 @@ export function loadAIChat(container) {
             if (typeof hljs !== 'undefined') {
                 try {
                     contentElement.querySelectorAll('pre code').forEach((block) => {
-                        try {
-                            // 确保代码内容被正确转义
-                            const originalContent = block.textContent;
-                            block.textContent = originalContent;
-                            
-                            hljs.highlightElement(block);
-                        } catch (e) {
-                            // 忽略单个代码块的高亮错误
-                            console.debug('Error highlighting individual code block:', e);
-                        }
+                        hljs.highlightElement(block);
                     });
                 } catch (e) {
-                    // 忽略整体高亮错误
                     console.debug('Error during code highlighting:', e);
                 }
             }
@@ -122,26 +378,18 @@ export function loadAIChat(container) {
         
         messageElement.appendChild(contentElement);
         
-        // 为助手消息添加重新生成按钮
+        // 为助手消息添加操作按钮
         if (role === 'assistant') {
             const actionsElement = document.createElement('div');
             actionsElement.className = 'message-actions';
             actionsElement.innerHTML = `
-                <button class="action-copy-button" title="${t('chat.copy')}">
+                <button class="action-button action-copy-button" title="${t('chat.copy')}">
                     <img src="assets/svg/copy.svg" alt="Copy" class="button-icon">
-                </button>
-                <button class="action-regenerate-button" title="${t('chat.regenerate')}">
-                    <img src="assets/svg/refresh.svg" alt="Regenerate" class="button-icon">
+                    ${t('chat.copy')}
                 </button>
             `;
             messageElement.appendChild(actionsElement);
             
-            // 添加重新生成功能
-            const regenerateButton = actionsElement.querySelector('.action-regenerate-button');
-            regenerateButton.addEventListener('click', () => {
-                regenerateResponse(messageElement);
-            });
-
             // 添加复制功能
             const copyButton = actionsElement.querySelector('.action-copy-button');
             copyButton.addEventListener('click', () => {
@@ -151,19 +399,13 @@ export function loadAIChat(container) {
         
         chatMessages.appendChild(messageElement);
         
-        // Scroll to bottom
+        // 滚动到底部
         chatMessages.scrollTop = chatMessages.scrollHeight;
         
         return contentElement;
     }
     
-    // Function to send message
-    let streamingMessageElement = null;
-    let codeBlocks = new Map(); // 用于跟踪代码块
-    
-    
-    // 简化输入事件处理
-    
+    // 新增：发送消息函数
     async function sendMessage() {
         const message = chatInput.value.trim();
         
@@ -181,470 +423,203 @@ export function loadAIChat(container) {
             welcomeMessage.remove();
         }
         
-        // Clear input
+        // 清空输入框
         chatInput.value = '';
         
-        // Reset input height
+        // 重置输入框高度
         chatInput.style.height = 'auto';
         
-        // Add user message to UI
+        // 添加用户消息到UI
         addMessageToUI('user', message);
         
-        // Add user message to chat history
+        // 添加用户消息到聊天历史
         chatHistory.push({
             role: 'user',
             content: message
         });
         
-        // Create streaming message element
+        // 创建助手消息元素
         const assistantMessageElement = document.createElement('div');
         assistantMessageElement.className = 'message assistant';
         
         const contentElement = document.createElement('div');
         contentElement.className = 'message-content';
         
-        // Add typing indicator
-        const typingIndicator = document.createElement('div');
-        typingIndicator.className = 'typing-indicator';
-        typingIndicator.innerHTML = '<span></span><span></span><span></span>';
+        // 添加加载指示器
+        const loadingIndicator = document.createElement('div');
+        loadingIndicator.className = 'loading-indicator';
+        loadingIndicator.innerHTML = '<div></div><div></div><div></div>';
         
-        contentElement.appendChild(typingIndicator);
+        contentElement.appendChild(loadingIndicator);
         assistantMessageElement.appendChild(contentElement);
         
         chatMessages.appendChild(assistantMessageElement);
         
-        // Scroll to bottom
+        // 滚动到底部
         chatMessages.scrollTop = chatMessages.scrollHeight;
         
-        // Set streaming message element
+        // 设置流式消息元素
         streamingMessageElement = contentElement;
         
-        // Set generating state
+        // 设置生成状态
         isGenerating = true;
-        updateInputState();
         
         try {
-            // Get settings
+            // 获取设置
             const settings = await getSettings();
             
-            // Choose API based on default AI provider
-            let response;
-            
+            // 根据默认AI提供商选择API
             if (settings.defaultAI === 'openai') {
-                // Import OpenAI service
-                const { sendMessageToOpenAI, parseOpenAIStreamingResponse } = await import('../services/openai-service.js');
+                // 使用OpenAI API
+                const response = await sendMessageToOpenAI(message, chatHistory, settings.systemPrompt);
                 
-                // Use OpenAI API
-                response = await sendMessageToOpenAI(message, chatHistory, settings.systemPrompt);
+                // 移除加载指示器
+                loadingIndicator.remove();
                 
-                // Handle streaming response
+                // 处理流式响应
                 if (response.streaming) {
-                    let fullResponse = '';
-                    let buffer = ''; // 用于存储可能被截断的数据
+                    // 初始化响应内容
+                    let fullText = '';
+                    
+                    // 读取流
+                    const reader = response.reader;
+                    const decoder = response.decoder;
                     
                     // 处理流式响应
-                    while (true) {
-                        try {
-                            const { done, value } = await response.reader.read();
+                    let done = false;
+                    while (!done) {
+                        const { value, done: readerDone } = await reader.read();
+                        done = readerDone;
+                        
+                        if (done) break;
+                        
+                        // 解码数据块
+                        const chunk = decoder.decode(value, { stream: true });
+                        
+                        // 处理数据块
+                        const lines = chunk.split('\n');
+                        for (const line of lines) {
+                            if (line.trim() === '') continue;
                             
-                            if (done) {
-                                break;
+                            // 解析OpenAI流式响应
+                            const content = parseOpenAIStreamingResponse(line);
+                            if (content) {
+                                fullText += content;
+                                
+                                // 修复：使用包装容器解决流式内容分词换行问题
+                                const wrappedHtml = `<div class="streaming-content" style="white-space: normal; word-break: normal; word-wrap: normal; overflow-wrap: break-word;">${renderMarkdown(fullText)}</div>`;
+                                contentElement.innerHTML = wrappedHtml;
+                                
+                                // 滚动到底部
+                                chatMessages.scrollTop = chatMessages.scrollHeight;
                             }
-                            
-                            // 解码响应
-                            const chunk = response.decoder.decode(value, { stream: true });
-                            buffer += chunk;
-                            
-                            // 查找完整的数据行
-                            const lines = buffer.split('\n');
-                            buffer = lines.pop() || ''; // 保留最后一行（可能不完整）
-                            
-                            for (const line of lines) {
-                                if (line.trim().startsWith('data:')) {
-                                    const content = parseOpenAIStreamingResponse(line);
-                                    
-                                    if (content && typeof content === 'string') {
-                                        fullResponse += content;
-                                        streamingMessageElement.innerHTML = renderMarkdown(fullResponse);
-                                        
-                                        // 应用代码高亮
-                                        if (typeof hljs !== 'undefined') {
-                                            try {
-                                                streamingMessageElement.querySelectorAll('pre code').forEach((block) => {
-                                                    try {
-                                                        hljs.highlightElement(block);
-                                                    } catch (e) {
-                                                        console.debug('Error highlighting code block:', e);
-                                                    }
-                                                });
-                                            } catch (e) {
-                                                console.debug('Error during code highlighting:', e);
-                                            }
-                                        }
-                                        
-                                        // 自动滚动到底部
-                                        scrollToBottom();
-                                    }
-                                }
-                            }
-                        } catch (error) {
-                            console.error('Error reading stream:', error);
-                            break;
                         }
                     }
                     
-                    // 处理buffer中可能剩余的数据
-                    if (buffer.trim() && buffer.trim().startsWith('data:')) {
-                        const content = parseOpenAIStreamingResponse(buffer);
-                        
-                        if (content && typeof content === 'string') {
-                            fullResponse += content;
-                            streamingMessageElement.innerHTML = renderMarkdown(fullResponse);
-                            
-                            // 应用代码高亮
-                            if (typeof hljs !== 'undefined') {
-                                try {
-                                    streamingMessageElement.querySelectorAll('pre code').forEach((block) => {
-                                        try {
-                                            hljs.highlightElement(block);
-                                        } catch (e) {
-                                            console.debug('Error highlighting code block:', e);
-                                        }
-                                    });
-                                } catch (e) {
-                                    console.debug('Error during code highlighting:', e);
-                                }
-                            }
-                            
-                            // 自动滚动到底部
-                            scrollToBottom();
-                        }
-                    }
-                    
-                    // 如果没有收到任何内容，显示错误消息
-                    if (!fullResponse) {
-                        console.error('No content received from OpenAI streaming response');
-                        streamingMessageElement.innerHTML = '<div class="error-message">Error: No content received from OpenAI</div>';
-                    } else {
-                        // 将完整的响应添加到聊天历史
-                        chatHistory.push({
-                            role: 'assistant',
-                            content: fullResponse
-                        });
-                        
-                        // 保存聊天历史
-                        await saveCurrentChat();
-                    }
+                    // 添加助手消息到聊天历史
+                    chatHistory.push({
+                        role: 'assistant',
+                        content: fullText
+                    });
                 } else {
-                    // Handle non-streaming response
-                    // 直接更新 streamingMessageElement
-                    if (streamingMessageElement) {
-                        // 移除打字指示器
-                        const typingIndicator = streamingMessageElement.querySelector('.typing-indicator');
-                        if (typingIndicator) {
-                            typingIndicator.remove();
-                        }
-                        
-                        // 更新内容
-                        streamingMessageElement.innerHTML = renderMarkdown(response.fullResponse);
-                        
-                        // 应用代码高亮
-                        if (typeof hljs !== 'undefined') {
-                            try {
-                                streamingMessageElement.querySelectorAll('pre code').forEach((block) => {
-                                    try {
-                                        hljs.highlightElement(block);
-                                    } catch (e) {
-                                        console.debug('Error highlighting code block:', e);
-                                    }
-                                });
-                            } catch (e) {
-                                console.debug('Error during code highlighting:', e);
-                            }
-                        }
-                        
-                        // 滚动到底部
-                        chatMessages.scrollTop = chatMessages.scrollHeight;
-                    }
+                    // 处理非流式响应
+                    contentElement.innerHTML = renderMarkdown(response.fullResponse);
                     
-                    // Add to chat history
+                    // 添加助手消息到聊天历史
                     chatHistory.push({
                         role: 'assistant',
                         content: response.fullResponse
                     });
-                    
-                
                 }
-                    // Save chat history
-                await saveCurrentChat();
-                
-                // Reset generating state
-                isGenerating = false;
-                updateInputState();
             } else {
-                // Default to Ollama API
-                response = await sendMessageToOllama(message, chatHistory, (chunk, fullText) => {
-                    // Remove typing indicator
-                    const typingIndicator = streamingMessageElement.querySelector('.typing-indicator');
-                    if (typingIndicator) {
-                        typingIndicator.remove();
-                    }
-                    
-                    // Update content
-                    streamingMessageElement.innerHTML = renderMarkdown(fullText);
-                    
-                    // Apply code highlighting
-                    if (typeof hljs !== 'undefined') {
-                        try {
-                            streamingMessageElement.querySelectorAll('pre code').forEach((block) => {
-                                try {
-                                    hljs.highlightElement(block);
-                                } catch (e) {
-                                    console.debug('Error highlighting code block:', e);
-                                }
-                            });
-                        } catch (e) {
-                            console.debug('Error during code highlighting:', e);
-                        }
-                    }
-                    
-                    // Scroll to bottom
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                });
+                // 使用Ollama API
+                const response = await sendMessageToOllama(message, chatHistory);
                 
-                // Add assistant message to chat history
+                // 移除加载指示器
+                loadingIndicator.remove();
+                
+                // 更新内容 - 修复：从response.content中获取内容
+                const content = response.content || response;
+                contentElement.innerHTML = renderMarkdown(content);
+                
+                // 添加助手消息到聊天历史
                 chatHistory.push({
                     role: 'assistant',
-                    content: response.content
+                    content: content
                 });
-                
-                // Save chat history
-                await saveCurrentChat();
-                
-                // Reset generating state
-                isGenerating = false;
-                updateInputState();
             }
             
-            // Reset streaming message element
-            streamingMessageElement = null;
+            // 添加复制按钮
+            const actionsElement = document.createElement('div');
+            actionsElement.className = 'message-actions';
+            actionsElement.innerHTML = `
+                <button class="action-button action-copy-button" title="${t('chat.copy')}">
+                    <img src="assets/svg/copy.svg" alt="Copy" class="button-icon">
+                    ${t('chat.copy')}
+                </button>
+            `;
+            assistantMessageElement.appendChild(actionsElement);
+            
+            // 添加复制功能
+            const copyButton = actionsElement.querySelector('.action-copy-button');
+            copyButton.addEventListener('click', () => {
+                copyToClipboard(contentElement.textContent);
+            });
+            
+            // 应用代码高亮
+            if (typeof hljs !== 'undefined') {
+                try {
+                    contentElement.querySelectorAll('pre code').forEach((block) => {
+                        hljs.highlightElement(block);
+                    });
+                } catch (e) {
+                    console.debug('Error during code highlighting:', e);
+                }
+            }
         } catch (error) {
             console.error('Error sending message:', error);
             
-            // Show error message
-            if (streamingMessageElement) {
-                streamingMessageElement.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
-            }
-            
-            // Reset generating state
+            // 显示错误消息
+            contentElement.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
+        } finally {
+            // 重置生成状态
             isGenerating = false;
-            updateInputState();
-            
-            // Reset streaming message element
             streamingMessageElement = null;
         }
     }
     
-    // Auto-resize textarea
-    chatInput.addEventListener('input', () => {
-        chatInput.style.height = 'auto';
-        chatInput.style.height = (chatInput.scrollHeight) + 'px';
+    // Add welcome message
+    function addWelcomeMessage() {
+        const welcomeElement = document.createElement('div');
+        welcomeElement.className = 'message assistant welcome-message';
+        
+        const contentElement = document.createElement('div');
+        contentElement.className = 'message-content';
+        contentElement.innerHTML = renderMarkdown(t('chat.welcomeMessage', 'Hi, How can I help you today?'));
+        
+        welcomeElement.appendChild(contentElement);
+        chatMessages.appendChild(welcomeElement);
+    }
+    
+    // 新增：监听来自后台的消息
+    chrome.runtime.onMessage.addListener((message) => {
+        if (message.action === 'summaryStream') {
+            handleSummaryStream(message);
+        } else if (message.action === 'summaryError') {
+            handleSummaryError(message);
+        }
     });
     
-    // Create new chat
-    async function createNewChat() {
-        // Clear chat history
-        chatHistory = [];
-        
-        // Generate new chat ID
-        currentChatId = Date.now().toString();
-        
-        // Clear chat messages
-        chatMessages.innerHTML = '';
-        
-        // Add welcome message
-        addWelcomeMessage();
-        
-        // Save current chat ID
-        await chrome.storage.local.set({ lastActiveChatId: currentChatId });
-        
-        // Close history popup if open
-        historyPopup.classList.remove('show');
-    }
+    // 新增：绑定摘要按钮事件
+    summarizeButton.addEventListener('click', startSummarize);
     
-    // Load chat
-    async function loadChat(chatId) {
-        try {
-            // Get chat from storage
-            const result = await chrome.storage.local.get(['chatHistory_' + chatId]);
-            const chat = result['chatHistory_' + chatId];
-            
-            if (chat) {
-                // Set current chat ID
-                currentChatId = chatId;
-                
-                // Set chat history
-                chatHistory = chat.messages || [];
-                
-                // Clear chat messages
-                chatMessages.innerHTML = '';
-                
-                // Add messages to UI
-                chatHistory.forEach(message => {
-                    addMessageToUI(message.role, message.content);
-                });
-                
-                // Save current chat ID
-                chrome.storage.local.set({ lastActiveChatId: currentChatId });
-                
-                // Close history popup
-                historyPopup.classList.remove('show');
-            }
-        } catch (error) {
-            console.error('Error loading chat:', error);
-        }
-    }
+    // 新增：绑定刷新内容按钮事件
+    refreshPageContentButton.addEventListener('click', refreshPageContent);
     
-    // Save current chat
-    async function saveCurrentChat() {
-        if (!currentChatId || chatHistory.length === 0) {
-            return;
-        }
-        
-        try {
-            // Get chat title (first user message or default)
-            let title = 'Untitled Chat';
-            const firstUserMessage = chatHistory.find(msg => msg.role === 'user');
-            if (firstUserMessage) {
-                title = firstUserMessage.content.substring(0, 30) + (firstUserMessage.content.length > 30 ? '...' : '');
-            }
-            
-            // Create chat object
-            const chat = {
-                id: currentChatId,
-                title: title,
-                messages: chatHistory,
-                lastEditTime: Date.now()
-            };
-            
-            // Save chat to storage
-            await chrome.storage.local.set({ ['chatHistory_' + currentChatId]: chat });
-            
-            // Get chat history list
-            const result = await chrome.storage.local.get(['chatHistoryList']);
-            let chatHistoryList = result.chatHistoryList || [];
-            
-            // Check if chat already exists in list
-            const existingChatIndex = chatHistoryList.findIndex(c => c.id === currentChatId);
-            if (existingChatIndex !== -1) {
-                // Update existing chat
-                chatHistoryList[existingChatIndex] = {
-                    id: chat.id,
-                    title: chat.title,
-                    lastEditTime: chat.lastEditTime
-                };
-            } else {
-                // Add new chat to list
-                chatHistoryList.push({
-                    id: chat.id,
-                    title: chat.title,
-                    lastEditTime: chat.lastEditTime
-                });
-            }
-            
-            // Save chat history list
-            await chrome.storage.local.set({ chatHistoryList });
-        } catch (error) {
-            console.error('Error saving chat:', error);
-        }
-    }
-    
-    // Load chat history list
-    async function loadChatHistoryList() {
-        try {
-            // Get chat history list
-            const result = await chrome.storage.local.get(['chatHistoryList']);
-            const chatHistoryList = result.chatHistoryList || [];
-            
-            // Sort by last edit time (newest first)
-            chatHistoryList.sort((a, b) => b.lastEditTime - a.lastEditTime);
-            
-            // Clear history list
-            historyList.innerHTML = '';
-            
-            if (chatHistoryList.length === 0) {
-                // Show no history message
-                const noHistoryElement = document.createElement('div');
-                noHistoryElement.className = 'no-history';
-                noHistoryElement.textContent = t('chat.noHistory');
-                historyList.appendChild(noHistoryElement);
-                return;
-            }
-            
-            // Add chats to list
-            chatHistoryList.forEach(chat => {
-                const chatElement = document.createElement('div');
-                chatElement.className = 'history-item';
-                if (chat.id === currentChatId) {
-                    chatElement.classList.add('active');
-                }
-                
-                const titleElement = document.createElement('div');
-                titleElement.className = 'history-title';
-                titleElement.textContent = chat.title || t('chat.untitled');
-                
-                const deleteButton = document.createElement('button');
-                deleteButton.className = 'history-delete-button';
-                deleteButton.innerHTML = '×';
-                deleteButton.title = t('chat.delete');
-                
-                chatElement.appendChild(titleElement);
-                chatElement.appendChild(deleteButton);
-                
-                // Click event to load chat
-                chatElement.addEventListener('click', (e) => {
-                    if (e.target !== deleteButton) {
-                        loadChat(chat.id);
-                    }
-                });
-                
-                // Delete button click event
-                deleteButton.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    
-                    try {
-                        // Remove chat from storage
-                        await chrome.storage.local.remove(['chatHistory_' + chat.id]);
-                        
-                        // Remove chat from list
-                        const result = await chrome.storage.local.get(['chatHistoryList']);
-                        let chatHistoryList = result.chatHistoryList || [];
-                        chatHistoryList = chatHistoryList.filter(c => c.id !== chat.id);
-                        await chrome.storage.local.set({ chatHistoryList });
-                        
-                        // If current chat is deleted, create new chat
-                        if (chat.id === currentChatId) {
-                            createNewChat();
-                        }
-                        
-                        // Reload history list
-                        loadChatHistoryList();
-                    } catch (error) {
-                        console.error('Error deleting chat:', error);
-                    }
-                });
-                
-                historyList.appendChild(chatElement);
-            });
-        } catch (error) {
-            console.error('Error loading chat history list:', error);
-        }
-    }
-    
-    // Send button click event
+    // 新增：绑定发送按钮事件
     sendButton.addEventListener('click', sendMessage);
     
-    // Input enter key event
+    // 新增：绑定输入框回车事件
     chatInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -652,460 +627,23 @@ export function loadAIChat(container) {
         }
     });
     
-    // Event listeners for chat history
-    newChatButton.addEventListener('click', createNewChat);
+    // 新增：初始化摘要按钮
+    initSummaryButton();
     
-    historyButton.addEventListener('click', (e) => {
-        e.stopPropagation();
-        loadChatHistoryList();
-        historyPopup.classList.add('show');
+    // 新增：标签页切换时更新摘要按钮状态
+    chrome.tabs.onActivated.addListener(() => {
+        setTimeout(initSummaryButton, 300);
     });
     
-    closeHistoryButton.addEventListener('click', () => {
-        historyPopup.classList.remove('show');
+    // 新增：标签页更新时更新摘要按钮状态
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+        if (changeInfo.status === 'complete') {
+            setTimeout(initSummaryButton, 300);
+        }
     });
     
-    // Initialization: Load recent chat or create new chat
-    async function initChat() {
-        console.log('Initializing chat...');
-        
-        // 获取设置和聊天历史
-        const result = await chrome.storage.local.get(['settings', 'chatHistoryList', 'lastActiveChatId']);
-        const settings = result.settings || {};
-        const chatHistoryList = result.chatHistoryList || [];
-        const lastActiveChatId = result.lastActiveChatId;
-        
-        // 检查是否应该加载上次对话
-        const shouldLoadLastChat = settings.loadLastChat !== false;
-        
-        console.log(`Found ${chatHistoryList.length} chats, last active: ${lastActiveChatId}, should load last chat: ${shouldLoadLastChat}`);
-        
-        if (chatHistoryList.length > 0 && shouldLoadLastChat) {
-            if (lastActiveChatId) {
-                // 检查lastActiveChatId是否存在于chatHistoryList中
-                const chatExists = chatHistoryList.some(chat => chat.id === lastActiveChatId);
-                
-                if (chatExists) {
-                    // 加载最后活动的聊天
-                    console.log(`Loading last active chat: ${lastActiveChatId}`);
-                    loadChat(lastActiveChatId);
-                    return;
-                }
-            }
-            
-            // 如果没有lastActiveChatId或它不存在，按最后编辑时间排序加载最新的聊天
-            chatHistoryList.sort((a, b) => b.lastEditTime - a.lastEditTime);
-            console.log(`Loading most recent chat: ${chatHistoryList[0].id}`);
-            loadChat(chatHistoryList[0].id);
-        } else {
-            // 创建新聊天
-            console.log('Creating new chat (no history or loadLastChat is false)');
-            createNewChat();
-        }
-    }
-    
-    // Initialize chat
-    initChat();
-    
-    // Save current chat before page unload
-    window.removeEventListener('beforeunload', saveCurrentChatOnUnload); // 移除可能存在的旧监听器
-
-    // 创建一个命名的函数，以便可以移除
-    function saveCurrentChatOnUnload() {
-        // 只有当currentChatId存在且聊天历史不为空时才保存
-        if (currentChatId && chatHistory.length > 0) {
-            console.log(`Saving chat ${currentChatId} before unload`);
-            saveCurrentChat();
-        } else {
-            console.log('Not saving on unload: no current chat or empty history');
-        }
-    }
-
-    // 添加新的监听器
-    window.addEventListener('beforeunload', saveCurrentChatOnUnload);
-
-    // 点击外部区域关闭历史记录弹窗
-    document.addEventListener('click', (e) => {
-        // 如果历史记录弹窗已显示
-        if (historyPopup.classList.contains('show')) {
-            // 检查点击是否在历史记录弹窗外部
-            // 并且不是点击历史按钮本身（避免点击历史按钮同时触发打开和关闭）
-            if (!historyPopup.contains(e.target) && e.target !== historyButton && !historyButton.contains(e.target)) {
-                historyPopup.classList.remove('show');
-            }
-        }
-    });
-
-    // 阻止历史记录弹窗内部的点击事件冒泡到文档
-    historyPopup.addEventListener('click', (e) => {
-        // 不阻止删除按钮的点击事件冒泡，因为它需要触发删除功能
-        if (!e.target.classList.contains('history-delete-button')) {
-            e.stopPropagation();
-        }
-    });
-
-    // 添加更新输入状态的函数
-    function updateInputState() {
-        // 根据 isGenerating 状态禁用或启用输入框和发送按钮
-        chatInput.disabled = isGenerating;
-        sendButton.disabled = isGenerating;
-        
-        // 可选：添加视觉提示
-        if (isGenerating) {
-            chatInput.classList.add('disabled');
-            sendButton.classList.add('disabled');
-        } else {
-            chatInput.classList.remove('disabled');
-            sendButton.classList.remove('disabled');
-            chatInput.focus();
-        }
-    }
-
-    // 创建并添加刷新图标SVG
-    function createRefreshSvg() {
-        const refreshIcon = document.createElement('img');
-        refreshIcon.src = 'assets/svg/refresh.svg';
-        refreshIcon.classList.add('button-icon');
-        refreshIcon.setAttribute('viewBox', '0 0 24 24');
-        refreshIcon.setAttribute('width', '16');
-        refreshIcon.setAttribute('height', '16');
-        return refreshIcon;
-    }
-
-    function createCopySvg() {
-        const copyIcon = document.createElement('img');
-        copyIcon.src = 'assets/svg/copy.svg';
-        copyIcon.classList.add('button-icon');
-        copyIcon.setAttribute('viewBox', '0 0 24 24');
-        copyIcon.setAttribute('width', '16');
-        copyIcon.setAttribute('height', '16');
-        return copyIcon;
-    }
-
-    // 设置 MutationObserver 来监听新消息
-    function setupMessageObserver() {
-        const chatMessages = document.getElementById('chat-messages');
-        if (!chatMessages) return;
-        
-        const chatMessagesObserver = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                if (mutation.type === 'childList') {
-                    mutation.addedNodes.forEach((node) => {
-                        // 严格检查是否为非欢迎消息的助手消息
-                        if (node.nodeType === 1 && 
-                            node.classList.contains('message') && 
-                            node.classList.contains('assistant') && 
-                            !node.classList.contains('user') && 
-                            !node.classList.contains('welcome-message')) {
-                            
-                            // 检查是否已经有重新生成按钮
-                            if (!node.querySelector('.message-actions')) {
-                                // 添加重新生成按钮
-                                const actionsElement = document.createElement('div');
-                                actionsElement.className = 'message-actions';
-                                
-                                const regenerateButton = document.createElement('button');
-                                regenerateButton.className = 'action-regenerate-button';
-                                regenerateButton.title = t('chat.regenerate');
-
-                                const copyButton = document.createElement('button');
-                                copyButton.className = 'action-copy-button';
-                                copyButton.title = t('chat.copy');
-                                
-                                // 添加刷新图标
-                                regenerateButton.appendChild(createRefreshSvg());
-                                copyButton.appendChild(createCopySvg());
-                                
-                                actionsElement.appendChild(copyButton);
-                                actionsElement.appendChild(regenerateButton);
-                                node.appendChild(actionsElement);
-                                
-                                // 添加重新生成功能
-                                regenerateButton.addEventListener('click', () => {
-                                    regenerateResponse(node);
-                                });
-                                
-                                // 添加复制功能
-                                copyButton.addEventListener('click', () => {
-                                    const content = node.querySelector('.message-content').textContent;
-                                    copyToClipboard(content);
-                                });
-                            }
-                        }
-                    });
-                }
-            });
-        });
-        
-        // 开始观察
-        chatMessagesObserver.observe(chatMessages, { childList: true });
-        
-        // 为现有的非欢迎消息的助手消息添加重新生成按钮
-        document.querySelectorAll('.message.assistant:not(.user):not(.welcome-message)').forEach(node => {
-            if (!node.querySelector('.message-actions')) {
-                // 添加重新生成按钮
-                const actionsElement = document.createElement('div');
-                actionsElement.className = 'message-actions';
-                
-                const regenerateButton = document.createElement('button');
-                regenerateButton.className = 'action-regenerate-button';
-                regenerateButton.title = t('chat.regenerate');
-
-                const copyButton = document.createElement('button');
-                copyButton.className = 'action-copy-button';
-                copyButton.title = t('chat.copy');
-                
-                // 添加刷新图标
-                regenerateButton.appendChild(createRefreshSvg());
-                copyButton.appendChild(createCopySvg());
-                
-                actionsElement.appendChild(copyButton);
-                actionsElement.appendChild(regenerateButton);
-                node.appendChild(actionsElement);
-                
-                // 添加重新生成功能
-                regenerateButton.addEventListener('click', () => {
-                    regenerateResponse(node);
-                });
-                
-                // 添加复制功能
-                copyButton.addEventListener('click', () => {
-                    const content = node.querySelector('.message-content').textContent;
-                    copyToClipboard(content);
-                });
-            }
-        });
-        
-        // 移除欢迎消息上的重新生成按钮
-        document.querySelectorAll('.message.welcome-message .message-actions').forEach(element => {
-            element.remove();
-        });
-    }
-
-    // 重新生成响应函数
-    async function regenerateResponse(assistantMessageElement) {
-        // 找到前一条用户消息
-        let userMessageElement = assistantMessageElement.previousElementSibling;
-        
-        if (!userMessageElement || !userMessageElement.classList.contains('user')) {
-            console.error('Cannot find the user message to regenerate response');
-            return;
-        }
-        
-        // 获取用户消息内容
-        const userMessageContent = userMessageElement.querySelector('.message-content').textContent;
-        
-        // 获取助手消息内容元素
-        const messageContent = assistantMessageElement.querySelector('.message-content');
-        
-        // 显示打字指示器
-        messageContent.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
-        
-        // 隐藏重新生成按钮
-        const regenerateButton = assistantMessageElement.querySelector('.action-regenerate-button');
-        if (regenerateButton) {
-            regenerateButton.style.display = 'none';
-        }
-
-        // 隐藏复制按钮
-        const copyButton = assistantMessageElement.querySelector('.action-copy-button');
-        if (copyButton) {
-            copyButton.style.display = 'none';
-        }
-        
-        try {
-            // 获取当前设置
-            const settings = await getSettings();
-            
-            // 收集聊天历史
-            const historyMessages = [];
-            let currentElement = document.getElementById('chat-messages').firstChild;
-            
-            // 遍历所有消息元素，直到当前助手消息
-            while (currentElement && currentElement !== assistantMessageElement) {
-                if (currentElement.classList.contains('message')) {
-                    const role = currentElement.classList.contains('user') ? 'user' : 'assistant';
-                    const content = currentElement.querySelector('.message-content').textContent;
-                    
-                    historyMessages.push({
-                        role: role,
-                        content: content
-                    });
-                }
-                currentElement = currentElement.nextElementSibling;
-            }
-            
-            // 根据默认AI服务选择
-            const defaultAI = settings.defaultAI || settings.service || 'ollama';
-            
-            if (defaultAI === 'openai') {
-                // 使用OpenAI服务...
-            } else {
-                // 使用Ollama服务
-                try {
-                    // 获取系统提示
-                    const systemPrompt = settings.systemPrompt || '';
-                    
-                    // 创建一个更新回调函数
-                    const updateCallback = (_, fullContent) => {
-                        // 确保fullContent是字符串
-                        if (typeof fullContent === 'string') {
-                            messageContent.innerHTML = renderMarkdown(fullContent);
-                            
-                            // 应用代码高亮
-                            if (typeof hljs !== 'undefined') {
-                                try {
-                                    messageContent.querySelectorAll('pre code').forEach((block) => {
-                                        try {
-                                            hljs.highlightElement(block);
-                                        } catch (e) {
-                                            console.debug('Error highlighting code block:', e);
-                                        }
-                                    });
-                                } catch (e) {
-                                    console.debug('Error during code highlighting:', e);
-                                }
-                            }
-                            
-                            // 自动滚动到底部
-                            scrollToBottom();
-                        } else {
-                            console.error('Invalid content format in updateCallback:', fullContent);
-                        }
-                    };
-                    
-                    // 发送消息到Ollama，使用updateCallback
-                    const response = await sendMessageToOllama(userMessageContent, historyMessages, updateCallback);
-                    
-                    // 处理响应
-                    let responseText = '';
-                    
-                    if (response && typeof response === 'string') {
-                        responseText = response;
-                    } else if (response && response.message) {
-                        responseText = response.message.content;
-                    } else if (response && response.content) {
-                        responseText = response.content;
-                    }
-                    
-                    // 确保responseText是字符串
-                    if (typeof responseText === 'string') {
-                        messageContent.innerHTML = renderMarkdown(responseText);
-                        
-                        // 应用代码高亮
-                        if (typeof hljs !== 'undefined') {
-                            try {
-                                messageContent.querySelectorAll('pre code').forEach((block) => {
-                                    try {
-                                        hljs.highlightElement(block);
-                                    } catch (e) {
-                                        console.debug('Error highlighting code block:', e);
-                                    }
-                                });
-                            } catch (e) {
-                                console.debug('Error during code highlighting:', e);
-                            }
-                        }
-                    } else {
-                        console.error('Invalid response format from Ollama:', response);
-                        messageContent.innerHTML = '<div class="error-message">Error: Invalid response format from Ollama</div>';
-                    }
-                    
-                    // 关键修复：查找并替换聊天历史中的助手消息，而不是添加新消息
-                    // 找到当前助手消息在聊天历史中的索引
-                    let assistantIndex = -1;
-                    for (let i = 0; i < chatHistory.length; i++) {
-                        if (chatHistory[i].role === 'assistant') {
-                            // 找到用户消息后的第一个助手消息
-                            if (i > 0 && chatHistory[i-1].role === 'user' && 
-                                chatHistory[i-1].content === userMessageContent) {
-                                assistantIndex = i;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (assistantIndex !== -1) {
-                        // 替换现有的助手消息
-                        chatHistory[assistantIndex].content = responseText;
-                    } else {
-                        // 如果找不到匹配的消息（这种情况不应该发生），则添加新消息
-                        chatHistory.push({
-                            role: 'assistant',
-                            content: responseText
-                        });
-                    }
-                    
-                    // 保存聊天历史
-                    await saveCurrentChat();
-                    
-                } catch (ollamaError) {
-                    console.error('Error using Ollama service:', ollamaError);
-                    messageContent.innerHTML = `<div class="error-message">Error using Ollama: ${ollamaError.message}</div>`;
-                }
-            }
-            
-            // 显示重新生成按钮
-            if (regenerateButton) {
-                regenerateButton.style.display = '';  // 恢复默认显示状态
-            }
-
-            // 显示复制按钮
-            if (copyButton) {
-                copyButton.style.display = '';  // 恢复默认显示状态
-            }
-            
-            // 自动滚动到底部
-            scrollToBottom();
-            
-        } catch (error) {
-            console.error('Error regenerating response:', error);
-            messageContent.innerHTML = `<div class="error-message">Error regenerating response: ${error.message}</div>`;
-            
-            // 显示重新生成按钮
-            if (regenerateButton) {
-                regenerateButton.style.display = '';  // 恢复默认显示状态
-            }
-
-            // 显示复制按钮
-            if (copyButton) {
-                copyButton.style.display = '';  // 恢复默认显示状态
-            }
-            
-            // 自动滚动到底部
-            scrollToBottom();
-        }
-    }
-
-    // 复制功能
-    function copyToClipboard(text) {
-        const tempInput = document.createElement('input');
-        tempInput.value = text;
-        document.body.appendChild(tempInput);
-        tempInput.select();
-        document.execCommand('copy');
-        document.body.removeChild(tempInput);
-    }
-
-    // 滚动到底部函数
-    function scrollToBottom() {
-        const chatMessages = document.getElementById('chat-messages');
-        if (chatMessages) {
-            // 使用平滑滚动效果
-            chatMessages.scrollTo({
-                top: chatMessages.scrollHeight,
-                behavior: 'smooth'
-            });
-        }
-    }
-
-    // 在页面加载完成后设置观察器
-    document.addEventListener('DOMContentLoaded', () => {
-        setupMessageObserver();
-    });
-
-    // 如果页面已经加载完成，立即设置观察器
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        setupMessageObserver();
-    }
-} 
+    // 初始化
+    addWelcomeMessage();
+    initSummaryButton();
+    adjustTextareaHeight();
+}

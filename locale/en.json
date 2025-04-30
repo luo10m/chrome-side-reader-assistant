@@ -21,7 +21,10 @@
     "untitled": "Untitled Chat",
     "systemMessage": "Chat history cleared. Start a new conversation.",
     "welcomeMessage": "Hi, How can I help you today?",
-    "regenerate": "Regenerate response"
+    "regenerate": "Regenerate response",
+    "summarize": "Summarize Page",
+    "summarizing": "Summarizing...",
+    "refreshContent": "Refresh Content"
   },
   "settings": {
     "header": "Settings",
@@ -139,6 +142,8 @@
     "translationFailed": "Translation failed",
     "enterTextPrompt": "Please enter text to translate",
     "openedInNewTab": "Translation opened in a new tab",
-    "copied": "Copied!"
+    "copied": "Copied!",
+    "summarize": "Summarize",
+    "summarizing": "Summarizing..."
   }
-} 
+}

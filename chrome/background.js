@@ -20,17 +20,27 @@ const defaultSettings = {
     openaiCustomModel: '',
 };
 
+// 新增：页面内容缓存，最多保存10个标签页的内容
+const MAX_PAGE_CACHE = 10;
+let pageCache = {};
+
 // current settings
 let currentSettings = { ...defaultSettings };
 
 // load settings
 function loadSettings() {
     return new Promise((resolve) => {
-        chrome.storage.local.get(['settings'], (result) => {
+        chrome.storage.local.get(['settings', 'pageCache'], (result) => {
             if (result.settings) {
                 // merge default settings and stored settings
                 currentSettings = { ...defaultSettings, ...result.settings };
             }
+            
+            // 加载页面缓存
+            if (result.pageCache) {
+                pageCache = result.pageCache;
+            }
+            
             resolve(currentSettings);
         });
     });
@@ -49,6 +59,196 @@ function saveSettings(settings) {
     });
 }
 
+// 新增：更新页面缓存并保存到storage
+function upsertPageCache(tabId, url, title, content) {
+    // 更新缓存
+    pageCache[tabId] = {
+        url,
+        title,
+        content,
+        timestamp: Date.now()
+    };
+    
+    // 如果缓存超过最大限制，删除最旧的条目
+    const tabIds = Object.keys(pageCache);
+    if (tabIds.length > MAX_PAGE_CACHE) {
+        // 按时间戳排序
+        const sortedTabIds = tabIds.sort((a, b) => 
+            pageCache[a].timestamp - pageCache[b].timestamp
+        );
+        
+        // 删除最旧的条目
+        delete pageCache[sortedTabIds[0]];
+    }
+    
+    // 保存到storage
+    chrome.storage.local.set({ pageCache });
+    
+    console.log(`Page cache updated for tab ${tabId}, total cache entries: ${Object.keys(pageCache).length}`);
+}
+
+// 新增：将网页内容和摘要保存到聊天历史
+function cacheHistory(url, title, pageText, summaryText) {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['chatHistory'], (result) => {
+            let history = result.chatHistory || [];
+            const chatId = Date.now().toString();
+            
+            // 添加URL消息
+            history.push({
+                id: chatId,
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a helpful assistant.'
+                    },
+                    {
+                        role: 'user',
+                        content: `URL: ${url}\nTitle: ${title}`
+                    },
+                    {
+                        role: 'assistant',
+                        content: '我已收到您分享的网页链接。'
+                    },
+                    {
+                        role: 'user',
+                        content: '请为我摘要这个网页的内容。'
+                    },
+                    {
+                        role: 'assistant',
+                        content: summaryText
+                    }
+                ],
+                timestamp: Date.now()
+            });
+            
+            // 保存历史
+            chrome.storage.local.set({ chatHistory: history }, () => {
+                resolve();
+            });
+        });
+    });
+}
+
+// 新增：使用OpenAI API生成摘要
+async function summarizeWithOpenAI(tabId, url, title, content) {
+    const apiKey = currentSettings.openaiApiKey;
+    if (!apiKey) throw new Error('OpenAI API Key is not configured');
+
+    const messageId = Date.now().toString();
+    
+    // 截断内容，防止token过多
+    const MAX_CONTENT_LENGTH = 10000;
+    const truncatedContent = content.length > MAX_CONTENT_LENGTH 
+        ? content.substring(0, MAX_CONTENT_LENGTH) + '...(content truncated)'
+        : content;
+    
+    try {
+        // 通知侧边栏开始摘要
+        chrome.runtime.sendMessage({
+            action: 'summaryStream',
+            messageId,
+            done: false,
+            content: '正在生成摘要...'
+        });
+        
+        // 准备请求
+        const baseUrl = currentSettings.openaiBaseUrl || 'https://api.openai.com/v1';
+        const model = currentSettings.openaiCustomModel || currentSettings.openaiModel || 'gpt-3.5-turbo';
+        
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: model,
+                messages: [
+                    {
+                        role: 'system',
+                        content: '你是一个专业的网页内容摘要助手。请为用户提供清晰、简洁、结构化的网页内容摘要。摘要应包含网页的主要观点、关键信息和结论。请使用markdown格式，以便于阅读。'
+                    },
+                    {
+                        role: 'user',
+                        content: `请为以下网页内容生成一个全面的摘要：\n\n标题：${title}\nURL：${url}\n\n内容：${truncatedContent}`
+                    }
+                ],
+                stream: true
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(`OpenAI API error: ${error.error?.message || 'Unknown error'}`);
+        }
+        
+        // 处理流式响应
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let fullResponse = '';
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            
+            if (done) {
+                // 发送完成消息
+                chrome.runtime.sendMessage({
+                    action: 'summaryStream',
+                    messageId,
+                    done: true,
+                    content: fullResponse
+                });
+                
+                // 保存到历史记录
+                await cacheHistory(url, title, truncatedContent, fullResponse);
+                break;
+            }
+            
+            // 解码数据块
+            const chunk = decoder.decode(value);
+            
+            // 处理SSE格式
+            const lines = chunk.split('\n').filter(line => line.trim() !== '' && line.trim() !== 'data: [DONE]');
+            
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.substring(6));
+                        if (data.choices && data.choices[0]?.delta?.content) {
+                            const content = data.choices[0].delta.content;
+                            fullResponse += content;
+                            
+                            // 发送增量更新
+                            chrome.runtime.sendMessage({
+                                action: 'summaryStream',
+                                messageId,
+                                done: false,
+                                content: content
+                            });
+                        }
+                    } catch (e) {
+                        console.debug('Error parsing JSON from stream:', e);
+                    }
+                }
+            }
+        }
+        
+        return fullResponse;
+    } catch (error) {
+        console.error('Error summarizing with OpenAI:', error);
+        
+        // 发送错误消息
+        chrome.runtime.sendMessage({
+            action: 'summaryError',
+            messageId,
+            error: error.message
+        });
+        
+        throw error;
+    }
+}
+
 // initialize settings
 loadSettings();
 
@@ -65,7 +265,62 @@ chrome.commands.onCommand.addListener((command) => {
 
 // listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'sendMessageToOllama') {
+    // 新增：处理页面内容消息
+    if (request.action === 'pageContent') {
+        const tabId = sender.tab ? sender.tab.id : null;
+        if (tabId) {
+            upsertPageCache(tabId, request.url, request.title, request.content);
+        }
+        sendResponse({ success: true });
+        return false;
+    }
+    
+    // 新增：处理摘要请求
+    else if (request.action === 'summarizePage') {
+        // 获取当前活动标签页
+        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+            try {
+                if (tabs.length === 0) {
+                    throw new Error('No active tab found');
+                }
+                
+                const tabId = tabs[0].id;
+                const tabInfo = pageCache[tabId];
+                
+                if (!tabInfo) {
+                    throw new Error('No content found for current tab. Please refresh the page and try again.');
+                }
+                
+                // 验证URL是否匹配
+                if (tabs[0].url !== tabInfo.url) {
+                    throw new Error('Tab URL has changed since content was cached. Please refresh the page and try again.');
+                }
+                
+                // 生成摘要
+                summarizeWithOpenAI(tabId, tabInfo.url, tabInfo.title, tabInfo.content)
+                    .catch(error => {
+                        console.error('Error in summarization:', error);
+                        chrome.runtime.sendMessage({
+                            action: 'summaryError',
+                            error: error.message
+                        });
+                    });
+                
+                sendResponse({ success: true, processing: true });
+            } catch (error) {
+                console.error('Error processing summarize request:', error);
+                chrome.runtime.sendMessage({
+                    action: 'summaryError',
+                    error: error.message
+                });
+                sendResponse({ success: false, error: error.message });
+            }
+        });
+        
+        return true; // 异步响应
+    }
+    
+    else if (request.action === 'sendMessageToOllama') {
         // 创建一个唯一的消息ID
         const messageId = Date.now().toString();
         

@@ -5,110 +5,100 @@
 
 import { t } from './i18n.js';
 
-// 捕获并抑制 highlight.js 的安全警告
+// 简化错误处理，只捕获关键错误
 (function suppressHighlightJsWarnings() {
     // 保存原始的 console 方法
     const originalWarn = console.warn;
     const originalError = console.error;
-    const originalLog = console.log;
-    
-    // 检查是否是 highlight.js 的安全警告
-    function isHighlightJsWarning(args) {
-        if (args.length === 0) return false;
-        
-        // 检查第一个参数是否是字符串
-        if (typeof args[0] === 'string') {
-            return args[0].includes('unescaped HTML') || 
-                   args[0].includes('highlight.js/wiki/security');
-        }
-        
-        // 检查是否是 HTMLElement
-        if (args[0] instanceof HTMLElement || 
-            (args[0] && args[0].toString && args[0].toString() === '[object HTMLElement]')) {
-            return true;
-        }
-        
-        return false;
-    }
     
     // 重写 console.warn 方法
     console.warn = function(...args) {
-        if (!isHighlightJsWarning(args)) {
-            originalWarn.apply(console, args);
-        }
-    };
-    
-    // 重写 console.error 方法，过滤掉 highlight.js 的错误
-    console.error = function(...args) {
         if (args.length > 0 && typeof args[0] === 'string' && 
             (args[0].includes('highlight.js') || args[0].includes('Highlighting'))) {
-            // 忽略 highlight.js 相关的错误
+            // 忽略 highlight.js 相关的警告
             return;
         }
-        originalError.apply(console, args);
+        originalWarn.apply(console, args);
     };
     
-    // 重写 console.log 方法，过滤掉 highlight.js 的日志
-    console.log = function(...args) {
-        if (args.length > 0 && typeof args[0] === 'string' && 
-            (args[0].includes('Highlighting code with language') || 
-             args[0].includes('highlight.js loaded') ||
-             args[0].includes('Highlight successful') ||
-             args[0].includes('Using auto highlight'))) {
-            // 忽略 highlight.js 相关的日志
-            return;
+    // 重写 console.error 方法
+    console.error = function(...args) {
+        if (args.length > 0) {
+            // 检查是否是字符串类型的 highlight.js 错误
+            if (typeof args[0] === 'string' && 
+                (args[0].includes('highlight.js') || args[0].includes('Highlighting'))) {
+                return;
+            }
+            
+            // 检查是否是 Error 对象，且与 highlight.js 相关
+            if (args[0] instanceof Error && 
+                args[0].message && 
+                (args[0].message.includes('highlight.js') || 
+                 args[0].message.includes('Highlighting') ||
+                 args[0].stack && args[0].stack.includes('highlight.js'))) {
+                return;
+            }
+            
+            // 检查是否是 DOMException 或其他对象类型
+            if (args[0] && typeof args[0] === 'object') {
+                try {
+                    const errorString = String(args[0]);
+                    if (errorString.includes('[object DOMException]') || 
+                        errorString.includes('AbortError') ||
+                        errorString.includes('NetworkError')) {
+                        // 将对象转换为更有用的错误信息
+                        if (args[0] instanceof DOMException) {
+                            args[0] = `DOMException: ${args[0].name} - ${args[0].message}`;
+                        } else if (args[0].name && args[0].message) {
+                            args[0] = `${args[0].name}: ${args[0].message}`;
+                        }
+                    }
+                } catch (e) {
+                    // 忽略转换错误
+                }
+            }
         }
-        originalLog.apply(console, args);
+        
+        // 其他情况，正常输出错误
+        originalError.apply(console, args);
     };
 })();
 
-// 检查 highlight.js 是否已加载
-let hljs;
-let hljsLoaded = false;
-let hljsLanguages = [];
-
 // 初始化 highlight.js
-function initHighlight() {
-    if (typeof window.hljs !== 'undefined') {
-        hljs = window.hljs;
-        hljsLoaded = true;
-        hljsLanguages = hljs.listLanguages();
-        console.log('highlight.js loaded, available languages:', hljsLanguages);
-    } else {
-        console.warn('highlight.js not loaded');
-    }
-}
+let hljs = window.hljs;
 
-// 尝试初始化
-initHighlight();
-
-// 如果初始化失败，等待 DOMContentLoaded 事件再次尝试
-if (!hljsLoaded) {
-    window.addEventListener('DOMContentLoaded', initHighlight);
-}
-
-// 配置 marked
-marked.setOptions({
+// 配置 marked 选项
+marked.use({
+    gfm: true,         // 启用 GitHub 风格的 Markdown
+    breaks: true,      // 将换行符转换为 <br>
+    pedantic: false,   // 不使用原始 markdown.pl 的行为
+    sanitize: false,   // 不进行输出的安全过滤，我们使用 DOMPurify 处理
+    smartLists: true,  // 使用更智能的列表行为
+    smartypants: false, // 不使用更智能的标点符号
+    xhtml: false,      // 不使用自闭合的 XHTML 标签
+    
+    // 自定义代码高亮
     highlight: function(code, lang) {
-        console.log(`Highlighting code with language: ${lang}`);
+        if (!hljs) return code;
+        
         if (lang && hljs.getLanguage(lang)) {
             try {
-                const result = hljs.highlight(code, { 
+                return hljs.highlight(code, { 
                     language: lang,
                     ignoreIllegals: true 
                 }).value;
-                console.log('Highlight successful');
-                return result;
             } catch (e) {
                 console.error('Highlight error:', e);
             }
         }
-        console.log('Using auto highlight');
-        return hljs.highlightAuto(code).value;
-    },
-    langPrefix: 'hljs language-',
-    breaks: true,
-    gfm: true
+        
+        try {
+            return hljs.highlightAuto(code).value;
+        } catch (e) {
+            console.error('Auto highlight error:', e);
+            return code;
+        }
+    }
 });
 
 /**
@@ -120,38 +110,22 @@ export function renderMarkdown(markdown) {
     if (!markdown) return '';
     
     try {
-        // 预处理 Markdown，确保代码块中的 HTML 被转义
-        let processedMarkdown = markdown;
-        
-        // 特殊处理 HTML 代码示例
-        const htmlCodeBlockRegex = /```(html|xml)([\s\S]*?)```/g;
-        const htmlCodeBlocks = [];
-        
-        // 提取 HTML 代码示例并替换为占位符
-        processedMarkdown = processedMarkdown.replace(htmlCodeBlockRegex, (match, lang, code) => {
-            const placeholder = `HTML_CODE_BLOCK_${htmlCodeBlocks.length}`;
-            htmlCodeBlocks.push({ lang, code: code.trim() });
-            return '```' + lang + '\n' + placeholder + '\n```';
-        });
-        
-        // 处理其他代码块
-        processedMarkdown = preprocessMarkdown(processedMarkdown);
+        // 预处理 Markdown
+        const processedMarkdown = preprocessMarkdown(markdown);
         
         // 使用 marked 将 Markdown 转换为 HTML
         let html = marked.parse(processedMarkdown);
         
-        // 恢复 HTML 代码示例
-        htmlCodeBlocks.forEach((block, index) => {
-            const placeholder = `HTML_CODE_BLOCK_${index}`;
-            const escapedCode = escapeHtml(block.code);
-            html = html.replace(placeholder, escapedCode);
-        });
-        
         // 使用 DOMPurify 清理 HTML，防止 XSS 攻击
-        const sanitized = DOMPurify.sanitize(html);
+        if (window.DOMPurify) {
+            html = DOMPurify.sanitize(html);
+        }
         
         // 处理代码块，添加复制按钮和语言标签
-        const processed = processCodeBlocks(sanitized);
+        let processed = processCodeBlocks(html);
+        
+        // 修复中文文本分词换行问题
+        processed = fixChineseTextWrapping(processed);
         
         return processed;
     } catch (error) {
@@ -162,24 +136,60 @@ export function renderMarkdown(markdown) {
 }
 
 /**
+ * 修复中文文本分词换行问题
+ * @param {string} html HTML 文本
+ * @returns {string} 处理后的 HTML
+ */
+function fixChineseTextWrapping(html) {
+    // 创建临时 DOM 元素
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    
+    // 查找所有段落和文本块
+    const textElements = tempDiv.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6, span, div');
+    
+    textElements.forEach(element => {
+        // 将空白字符串替换为正常空格，避免意外换行
+        element.innerHTML = element.innerHTML.replace(/(&nbsp;|\s)+/g, ' ');
+        
+        // 通过添加样式类解决分词换行问题
+        element.classList.add('chinese-text-fix');
+        
+        // 如果元素没有行内样式，添加行内样式
+        if (!element.hasAttribute('style')) {
+            element.setAttribute('style', 'word-break: normal; white-space: normal; overflow-wrap: break-word;');
+        } else {
+            // 如果已有样式，附加到现有样式后
+            let style = element.getAttribute('style');
+            style += '; word-break: normal; white-space: normal; overflow-wrap: break-word;';
+            element.setAttribute('style', style);
+        }
+    });
+    
+    return tempDiv.innerHTML;
+}
+
+/**
  * 预处理 Markdown，确保代码块中的 HTML 被转义
  * @param {string} markdown Markdown 文本
  * @returns {string} 处理后的 Markdown
  */
 function preprocessMarkdown(markdown) {
-    // 匹配所有代码块
-    const codeBlockRegex = /```([\s\S]*?)```/g;
+    if (!markdown) return '';
     
-    // 替换代码块中的 HTML 标签，但保留 HTML 代码示例
-    return markdown.replace(codeBlockRegex, (match, codeContent) => {
-        // 检查是否是 HTML 代码示例
+    // 处理代码块中的 HTML
+    return markdown.replace(/```([\s\S]*?)```/g, (match, content) => {
+        // 检查是否已经是 HTML 或 XML 代码块
         if (match.startsWith('```html') || match.startsWith('```xml')) {
-            // 对于 HTML 代码示例，不进行转义，但在渲染时需要特殊处理
             return match;
-        } else {
-            // 对于其他代码块，转义 HTML 标签
-            return '```' + codeContent.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '```';
         }
+        
+        // 提取语言标识符（如果有）
+        const firstLine = content.split('\n')[0];
+        const restContent = content.substring(firstLine.length);
+        
+        // 返回处理后的代码块
+        return '```' + firstLine + restContent + '```';
     });
 }
 
@@ -189,140 +199,79 @@ function preprocessMarkdown(markdown) {
  * @returns {string} 处理后的 HTML
  */
 function processCodeBlocks(html) {
-    try {
-        // 创建临时 DOM 元素
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = html;
-        
-        // 处理带有语言的代码块
-        tempDiv.querySelectorAll('pre code[class^="language-"]').forEach(codeElement => {
-            try {
-                const pre = codeElement.parentElement;
-                const codeBlock = document.createElement('div');
-                codeBlock.className = 'code-block';
-                
-                // 获取语言
-                const langClass = Array.from(codeElement.classList).find(cls => cls.startsWith('language-'));
-                const language = langClass ? langClass.replace('language-', '') : '';
-                
-                // 创建代码块头部
-                const header = document.createElement('div');
-                header.className = 'code-header';
-                
-                // 添加语言标签
-                const langLabel = document.createElement('span');
-                langLabel.className = 'code-language';
-                langLabel.textContent = language || 'text';
-                header.appendChild(langLabel);
-                
-                // 添加复制按钮
-                const copyButton = document.createElement('button');
-                copyButton.className = 'copy-button';
-                copyButton.textContent = t('chat.copy');
-                
-                // 确保代码内容被正确转义
-                const codeContent = codeElement.textContent;
-                copyButton.setAttribute('data-code', codeContent);
-                
-                header.appendChild(copyButton);
-                
-                // 将原始代码块包装在新的结构中
-                pre.parentNode.insertBefore(codeBlock, pre);
-                codeBlock.appendChild(header);
-                codeBlock.appendChild(pre);
-                
-                // 应用代码高亮
-                if (hljsLoaded) {
-                    // 为代码块添加一个唯一ID，避免重复高亮
-                    if (!codeElement.id) {
-                        const codeId = `code-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                        codeElement.setAttribute('id', codeId);
-                    }
-                    
-                    // 确保代码内容被正确转义
-                    if (!codeElement.classList.contains('hljs')) {
-                        try {
-                            // 先清空内容，然后重新设置转义后的内容
-                            const originalContent = codeElement.textContent;
-                            codeElement.textContent = originalContent;
-                            
-                            if (language === '' || hljsLanguages.includes(language)) {
-                                hljs.highlightElement(codeElement);
-                            }
-                        } catch (error) {
-                            console.error('Error highlighting code:', error);
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('Error processing code block:', error);
-            }
-        });
-        
-        // 处理普通代码块
-        tempDiv.querySelectorAll('pre code:not([class^="language-"])').forEach(codeElement => {
-            const pre = codeElement.parentElement;
-            const codeBlock = document.createElement('div');
-            codeBlock.className = 'code-block';
-            
-            // 创建代码块头部
-            const header = document.createElement('div');
-            header.className = 'code-header';
-            
-            // 添加语言标签
-            const langLabel = document.createElement('span');
-            langLabel.className = 'code-language';
-            langLabel.textContent = 'text';
-            header.appendChild(langLabel);
-            
-            // 添加复制按钮
-            const copyButton = document.createElement('button');
-            copyButton.className = 'copy-button';
-            copyButton.textContent = t('chat.copy');
-            
-            // 确保代码内容被正确转义
-            const codeContent = codeElement.textContent;
-            copyButton.setAttribute('data-code', codeContent);
-            
-            header.appendChild(copyButton);
-            
-            // 将原始代码块包装在新的结构中
-            pre.parentNode.insertBefore(codeBlock, pre);
-            codeBlock.appendChild(header);
-            codeBlock.appendChild(pre);
-            
-            // 应用代码高亮
-            if (hljsLoaded && !codeElement.classList.contains('hljs')) {
-                // 为代码块添加一个唯一ID，避免重复高亮
-                const codeId = `code-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                codeElement.setAttribute('id', codeId);
-                
-                // 确保代码内容被正确转义
-                const originalContent = codeElement.textContent;
-                codeElement.textContent = originalContent;
-                
-                hljs.highlightElement(codeElement);
-            }
-        });
-        
-        return tempDiv.innerHTML;
-    } catch (error) {
-        console.error('Error processing code blocks:', error);
-        return html;
-    }
-}
-
-/**
- * 应用代码高亮
- * @param {HTMLElement} element 包含代码块的元素
- */
-export function applyCodeHighlight(element) {
-    if (!hljsLoaded) return;
+    if (!html) return '';
     
-    // 查找所有未高亮的代码块
-    element.querySelectorAll('pre code:not(.hljs)').forEach(block => {
-        hljs.highlightElement(block);
+    // 创建临时 DOM 元素
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    
+    // 查找所有代码块
+    const codeBlocks = tempDiv.querySelectorAll('pre code');
+    
+    codeBlocks.forEach(codeBlock => {
+        // 获取代码块的父元素 (pre 标签)
+        const preElement = codeBlock.parentNode;
+        
+        // 添加类名
+        preElement.classList.add('code-block');
+        
+        // 获取语言
+        const classNames = codeBlock.className.split(' ');
+        let language = '';
+        
+        for (const className of classNames) {
+            if (className.startsWith('language-')) {
+                language = className.substring(9); // 移除 'language-' 前缀
+                break;
+            }
+        }
+        
+        // 创建代码块头部
+        const codeHeader = document.createElement('div');
+        codeHeader.className = 'code-header';
+        
+        // 添加语言标签
+        const languageLabel = document.createElement('span');
+        languageLabel.className = 'code-language';
+        languageLabel.textContent = language || t('code.unknown', '代码');
+        codeHeader.appendChild(languageLabel);
+        
+        // 添加复制按钮
+        const copyButton = document.createElement('button');
+        copyButton.className = 'code-copy-button';
+        copyButton.title = t('code.copy', '复制代码');
+        copyButton.innerHTML = '<img src="assets/svg/copy.svg" alt="Copy" class="button-icon">';
+        copyButton.setAttribute('data-code', codeBlock.textContent);
+        codeHeader.appendChild(copyButton);
+        
+        // 将头部插入到代码块前面
+        preElement.insertBefore(codeHeader, codeBlock);
     });
+    
+    // 为复制按钮添加事件监听器
+    const copyButtons = tempDiv.querySelectorAll('.code-copy-button');
+    copyButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const code = this.getAttribute('data-code');
+            navigator.clipboard.writeText(code)
+                .then(() => {
+                    // 显示复制成功提示
+                    this.classList.add('copied');
+                    this.title = t('code.copied', '已复制');
+                    
+                    // 2秒后恢复原样
+                    setTimeout(() => {
+                        this.classList.remove('copied');
+                        this.title = t('code.copy', '复制代码');
+                    }, 2000);
+                })
+                .catch(err => {
+                    console.error('Failed to copy code:', err);
+                });
+        });
+    });
+    
+    return tempDiv.innerHTML;
 }
 
 /**
@@ -331,7 +280,9 @@ export function applyCodeHighlight(element) {
  * @returns {string} 转义后的文本
  */
 function escapeHtml(text) {
-    const htmlEntities = {
+    if (!text) return '';
+    
+    const escapeMap = {
         '&': '&amp;',
         '<': '&lt;',
         '>': '&gt;',
@@ -339,5 +290,5 @@ function escapeHtml(text) {
         "'": '&#39;'
     };
     
-    return text.replace(/[&<>"']/g, (char) => htmlEntities[char]);
-} 
+    return text.replace(/[&<>"']/g, match => escapeMap[match]);
+}

@@ -110,6 +110,25 @@
     word-break: break-word;
 }
 
+/* 摘要消息内容不受普通消息的宽度限制 */
+.summary-message .message-content {
+    max-width: none;
+    width: calc(100% - 20px);
+    box-sizing: border-box;
+    margin: 0 10px;
+    white-space: pre-line !important; /* 关键改动：保留换行但合并空格 */
+    overflow-wrap: break-word !important; /* 允许长单词在单词边界处换行 */
+    word-break: keep-all !important; /* 防止在 CJK 字符间换行 */
+}
+
+/* 摘要消息内部元素 */
+.summary-message .message-content p {
+    white-space: pre-line !important;
+    overflow-wrap: break-word !important;
+    word-break: keep-all !important; /* 防止在 CJK 字符间换行 */
+    text-align: left !important;
+}
+
 .user .message-content {
     background-color: var(--primary-color);
     color: white;

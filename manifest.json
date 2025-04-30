@@ -18,11 +18,15 @@
     "sidePanel",
     "storage",
     "commands",
-    "clipboardWrite"
+    "clipboardWrite",
+    "tabs"
   ],
   "host_permissions": [
-    "http://localhost:*/*",
-    "http://127.0.0.1:*/*"
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "http://*.local/*",
+    "https://*.openai.com/*",
+    "https://api.openai.com/*"
   ],
   "background": {
     "service_worker": "chrome/background.js"

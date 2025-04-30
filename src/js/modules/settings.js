@@ -41,8 +41,7 @@ export async function loadSettings(container) {
                             <label data-i18n="settings.sections.appearance.language.label">Language</label>
                             <div class="settings-control">
                                 <select id="language-select">
-                                    <option value="en">English</option>
-                                    <option value="zh_cn">简体中文</option>
+                                    ${languageOptions}
                                 </select>
                             </div>
                         </div>
@@ -292,8 +291,8 @@ export async function loadSettings(container) {
         fetchModelList(ollamaHostInput.value + ':' + ollamaPortInput.value + ollamaPathInput.value, useProxyCheckbox.checked, currentModel);
     });
     
-    // Get model list
-    async function fetchModelList(url, useProxy, selectedModel = '') {
+    // Fetch model list
+    async function fetchModelList(url, useProxy, selectedModel) {
         if (!url) {
             ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.placeholder')}</option>`;
             ollamaModelSelect.disabled = true;
@@ -314,47 +313,94 @@ export async function loadSettings(container) {
             }
             modelListUrl += 'api/tags';
             
+            console.log('Fetching model list from:', modelListUrl);
+            
             // If proxy is enabled, use CORS proxy
             if (useProxy) {
                 modelListUrl = `https://cors-anywhere.herokuapp.com/${modelListUrl}`;
+                console.log('Using CORS proxy, URL:', modelListUrl);
             }
             
-            const response = await fetch(modelListUrl, {
-                method: 'GET'
-            });
+            // 使用 AbortController 设置超时
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
             
-            if (response.ok) {
-                const data = await response.json();
-                
-                if (data.models && Array.isArray(data.models) && data.models.length > 0) {
-                    // Clear selection
-                    ollamaModelSelect.innerHTML = '';
-                    
-                    // Add model options
-                    data.models.forEach(model => {
-                        const option = document.createElement('option');
-                        option.value = model.name;
-                        option.textContent = `${model.name} (${formatSize(model.size)})`;
-                        ollamaModelSelect.appendChild(option);
-                    });
-                    
-                    // Try to restore previously selected model
-                    if (currentSelectedModel && ollamaModelSelect.querySelector(`option[value="${currentSelectedModel}"]`)) {
-                        ollamaModelSelect.value = currentSelectedModel;
+            try {
+                const response = await fetch(modelListUrl, {
+                    method: 'GET',
+                    signal: controller.signal,
+                    headers: {
+                        'Accept': 'application/json',
+                        'Cache-Control': 'no-cache'
                     }
+                });
+                
+                // 清除超时
+                clearTimeout(timeoutId);
+                
+                if (response.ok) {
+                    const data = await response.json();
                     
-                    ollamaModelSelect.disabled = false;
+                    if (data.models && Array.isArray(data.models) && data.models.length > 0) {
+                        // Clear selection
+                        ollamaModelSelect.innerHTML = '';
+                        
+                        // Add model options
+                        data.models.forEach(model => {
+                            const option = document.createElement('option');
+                            option.value = model.name;
+                            option.textContent = `${model.name} (${formatSize(model.size)})`;
+                            ollamaModelSelect.appendChild(option);
+                        });
+                        
+                        // Try to restore previously selected model
+                        if (currentSelectedModel && ollamaModelSelect.querySelector(`option[value="${currentSelectedModel}"]`)) {
+                            ollamaModelSelect.value = currentSelectedModel;
+                        }
+                        
+                        ollamaModelSelect.disabled = false;
+                    } else {
+                        ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.empty')}</option>`;
+                        ollamaModelSelect.disabled = true;
+                    }
                 } else {
-                    ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.empty')}</option>`;
+                    const errorText = await response.text();
+                    console.error('Error response from API:', response.status, errorText);
+                    ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.error')}: ${response.status} ${response.statusText}</option>`;
                     ollamaModelSelect.disabled = true;
                 }
-            } else {
-                ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.error')}</option>`;
-                ollamaModelSelect.disabled = true;
+            } catch (fetchError) {
+                // 清除超时
+                clearTimeout(timeoutId);
+                throw fetchError; // 重新抛出错误，由外层 catch 处理
             }
         } catch (error) {
             console.error('Error fetching model list:', error);
-            ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.error')}: ${error.message}</option>`;
+            
+            let errorMessage = '';
+            
+            // 提供更具体的错误信息
+            if (error instanceof DOMException) {
+                if (error.name === 'AbortError') {
+                    errorMessage = '请求超时，请检查 Ollama 服务是否正在运行';
+                } else {
+                    errorMessage = `${error.name}: ${error.message}`;
+                }
+            } else if (error.name === 'AbortError') {
+                errorMessage = '请求超时，请检查 Ollama 服务是否正在运行';
+            } else if (error.message && error.message.includes('Failed to fetch')) {
+                errorMessage = '无法连接到 Ollama 服务，请检查 URL 和网络连接';
+            } else if (error.message && error.message.includes('NetworkError')) {
+                errorMessage = '网络错误，可能是 CORS 问题，请尝试启用代理';
+            } else if (error.toString) {
+                // 尝试获取更有意义的错误信息
+                errorMessage = error.toString();
+            } else {
+                // 如果无法获取有意义的错误信息，使用通用消息
+                errorMessage = '连接服务器时出错，请检查网络和服务器状态';
+            }
+            
+            ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.error')}: ${errorMessage}</option>`;
             ollamaModelSelect.disabled = true;
         }
     }

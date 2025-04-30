@@ -21,7 +21,10 @@
     "untitled": "未命名聊天",
     "systemMessage": "聊天历史已清除。开始新的对话。",
     "welcomeMessage": "你好，今天我能帮你什么忙？",
-    "regenerate": "重新生成回复"
+    "regenerate": "重新生成回复",
+    "summarize": "开始摘要",
+    "summarizing": "正在摘要...",
+    "refreshContent": "刷新内容"
   },
   "settings": {
     "header": "设置",
@@ -141,4 +144,4 @@
     "openedInNewTab": "翻译已在新标签页中打开",
     "copied": "已复制！"
   }
-} 
+}
