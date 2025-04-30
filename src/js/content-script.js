@@ -44,11 +44,18 @@ document.addEventListener('click', (event) => {
 // =============================================================
 // 新增：抓取当前页面正文并发送给后台
 // =============================================================
+
+// 保存当前页面URL，用于检测变化
+let currentPageUrl = location.href;
+
 function extractPageText() {
     try {
         // 获取页面标题和URL
         const title = document.title;
         const url = location.href;
+        
+        // 更新当前URL
+        currentPageUrl = url;
         
         // 获取页面内容（简易版，使用innerText）
         // 注意：复杂网页可以考虑使用Readability等算法提取主要内容
@@ -68,6 +75,49 @@ function extractPageText() {
         console.error('Failed to extract page text', e);
     }
 }
+
+// 检查URL变化的函数
+function checkUrlChange() {
+    const currentUrl = location.href;
+    
+    // 如果URL发生变化
+    if (currentUrl !== currentPageUrl) {
+        console.log('URL changed from', currentPageUrl, 'to', currentUrl);
+        
+        // 先提取页面内容并发送，确保页面缓存先更新
+        const title = document.title;
+        const text = document.body ? document.body.innerText : '';
+        
+        // 发送页面内容消息
+        chrome.runtime.sendMessage({
+            action: 'pageContent',
+            url: currentUrl,
+            title: title,
+            content: text,
+            timestamp: Date.now()
+        }, () => {
+            // 在页面内容发送完成后，再发送页面导航变化消息
+            chrome.runtime.sendMessage({
+                action: 'pageNavigated',
+                previousUrl: currentPageUrl,
+                newUrl: currentUrl,
+                newTitle: title,
+                timestamp: Date.now()
+            });
+            
+            // 更新当前URL（放在回调中确保顺序正确）
+            currentPageUrl = currentUrl;
+        });
+    }
+}
+
+// 设置定时器定期检查URL变化（针对SPA应用如Medium）
+const urlCheckInterval = setInterval(checkUrlChange, 1000);
+
+// 页面卸载时清除定时器
+window.addEventListener('beforeunload', () => {
+    clearInterval(urlCheckInterval);
+});
 
 // 页面加载完成后执行内容提取
 if (document.readyState === 'loading') {

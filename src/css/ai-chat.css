@@ -1079,3 +1079,106 @@ code {
     filter: invert(50%);
     transition: filter 0.2s;
 }
+
+/* 页面导航通知样式 */
+.page-navigation-notification {
+    display: flex;
+    margin: 10px auto;
+    padding: 10px 15px;
+    background-color: var(--highlight-bg);
+    border-radius: 8px;
+    max-width: 90%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+.notification-icon {
+    margin-right: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-color);
+}
+
+.notification-content {
+    flex: 1;
+}
+
+.notification-content p {
+    margin: 0;
+    padding: 2px 0;
+    color: var(--text-color);
+}
+
+.notification-content .notification-url {
+    font-size: 0.85em;
+    color: var(--secondary-text);
+    word-break: break-all;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 刷新提示样式 */
+.refresh-reminder {
+    font-size: 0.85em;
+    color: var(--accent-color);
+    margin-top: 4px;
+    animation: blink 1.5s infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+}
+
+/* 刷新按钮高亮样式 */
+.refresh-button-highlight {
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--accent-color);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    z-index: 10;
+    animation: bounce 1s infinite;
+}
+
+.refresh-button-highlight:after {
+    content: '';
+    position: absolute;
+    bottom: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid var(--accent-color);
+}
+
+.refresh-button-highlight.fade-out {
+    opacity: 0;
+    transition: opacity 1s ease-out;
+}
+
+@keyframes bounce {
+    0%, 100% { transform: translateX(-50%) translateY(0); }
+    50% { transform: translateX(-50%) translateY(-5px); }
+}
+
+/* 页面信息容器相对定位，便于定位子元素 */
+.page-info-container {
+    position: relative;
+}

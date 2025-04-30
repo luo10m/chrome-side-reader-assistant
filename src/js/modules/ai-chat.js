@@ -102,14 +102,22 @@ export function loadAIChat(container) {
                 const currentTab = tabs[0];
                 const tabId = currentTab.id;
                 
-                // 显示当前页面信息
+                // 更新当前标签页ID
+                currentTabId = tabId;
+                
+                console.log(`初始化摘要按钮，当前标签页: ${tabId}, URL: ${currentTab.url}`);
+                
+                // 先显示基本信息（在等待缓存检查期间）
                 updatePageInfo(currentTab.title, currentTab.url);
+                pageInfoContainer.style.display = 'flex';
                 
                 // 检查是否有页面缓存
                 chrome.runtime.sendMessage({ action: 'getSettings' }, (settings) => {
                     chrome.storage.local.get(['pageCache'], (result) => {
                         const pageCache = result.pageCache || {};
                         const tabInfo = pageCache[tabId];
+                        
+                        console.log('页面缓存信息:', tabInfo);
                         
                         if (tabInfo && tabInfo.url === currentTab.url) {
                             // 有缓存且URL匹配，启用摘要按钮
@@ -118,9 +126,43 @@ export function loadAIChat(container) {
                             pageTitleElement.textContent = tabInfo.title || '未知标题';
                             pageUrlElement.textContent = tabInfo.url;
                         } else {
-                            // 无缓存或URL不匹配，禁用摘要按钮
+                            // 无缓存或URL不匹配，禁用摘要按钮但仍显示页面信息
                             summarizeButton.disabled = true;
-                            pageInfoContainer.style.display = 'none';
+                            pageInfoContainer.style.display = 'flex';
+                            pageTitleElement.textContent = currentTab.title || '未知标题';
+                            pageUrlElement.textContent = currentTab.url;
+                            
+                            // 清除可能存在的旧刷新提示
+                            const existingReminders = pageInfoContainer.querySelectorAll('.refresh-reminder');
+                            existingReminders.forEach(el => el.remove());
+                            
+                            // 通知用户需要刷新页面内容
+                            const refreshMsg = document.createElement('div');
+                            refreshMsg.className = 'refresh-reminder';
+                            refreshMsg.textContent = '请点击"刷新内容"按钮获取页面内容';
+                            pageInfoContainer.appendChild(refreshMsg);
+                            
+                            // 清除可能存在的旧高亮提示
+                            const existingHighlights = document.querySelectorAll('.refresh-button-highlight');
+                            existingHighlights.forEach(el => el.remove());
+                            
+                            // 添加高亮提示
+                            const highlight = document.createElement('div');
+                            highlight.className = 'refresh-button-highlight';
+                            highlight.innerHTML = '<span>点击这里刷新</span>';
+                            refreshPageContentButton.parentNode.appendChild(highlight);
+                            
+                            // 动画效果，2秒后淡出
+                            setTimeout(() => {
+                                if (highlight && highlight.parentNode) {
+                                    highlight.classList.add('fade-out');
+                                    setTimeout(() => {
+                                        if (highlight && highlight.parentNode) {
+                                            highlight.parentNode.removeChild(highlight);
+                                        }
+                                    }, 1000);
+                                }
+                            }, 2000);
                         }
                     });
                 });
@@ -771,6 +813,41 @@ export function loadAIChat(container) {
             handleSummaryStream(message);
         } else if (message.action === 'summaryError') {
             handleSummaryError(message);
+        } else if (message.action === 'pageNavigated') {
+            // 检查是否是当前标签页
+            if (message.tabId === currentTabId) {
+                console.log('Current page navigated:', message.newUrl);
+                
+                // 添加页面切换通知
+                const notificationElement = document.createElement('div');
+                notificationElement.className = 'page-navigation-notification';
+                notificationElement.innerHTML = `
+                    <div class="notification-icon">
+                        <img src="assets/svg/navigate.svg" alt="Navigation" class="button-icon">
+                    </div>
+                    <div class="notification-content">
+                        <p>页面已切换到: <strong>${message.newTitle}</strong></p>
+                        <p class="notification-url">${message.newUrl}</p>
+                    </div>
+                `;
+                chatMessages.appendChild(notificationElement);
+                
+                // 滚动到底部
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                
+                // 确保在页面导航事件处理完成后，再执行initSummaryButton
+                // 这样做的目的是让pageCache有足够的时间更新
+                setTimeout(() => {
+                    // 更新摘要按钮状态和页面信息
+                    initSummaryButton();
+                    
+                    // 重新加载该标签页的聊天历史（会清除并重新加载消息）
+                    // 延后执行，确保页面信息区域和摘要按钮已正确显示
+                    setTimeout(() => {
+                        loadChatHistory(currentTabId);
+                    }, 100);
+                }, 300);
+            }
         }
     });
     

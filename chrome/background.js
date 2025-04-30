@@ -301,6 +301,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
         return true; // 保持消息通道打开
     } 
+    // 处理页面导航变化消息
+    else if (request.action === 'pageNavigated') {
+        const tabId = sender.tab ? sender.tab.id : null;
+        if (tabId) {
+            console.log(`Page navigated in tab ${tabId} from ${request.previousUrl} to ${request.newUrl}`);
+            
+            // 转发消息给侧边栏
+            chrome.runtime.sendMessage({
+                action: 'pageNavigated',
+                tabId: tabId,
+                previousUrl: request.previousUrl,
+                newUrl: request.newUrl,
+                newTitle: request.newTitle,
+                timestamp: request.timestamp
+            });
+            
+            // 发送成功响应
+            sendResponse({ success: true });
+        }
+    } 
     // 处理摘要请求
     else if (request.action === 'summarizePage') {
         // 使用请求中的tabId或尝试获取当前活动标签页
