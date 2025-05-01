@@ -15,18 +15,12 @@
 
 采用了 **卡片式容器（Card Container）** 设计模式，主体使用 **深色模式（Dark Mode）** 设计，内部包含：
 
-#### 2.1 内容头部（Content Header）
-
-- **应用名称（App Title）**："AI 聊天"，使用 H1 级别排版
-- **主操作按钮（Primary Action Button）**："开始摘要"，使用 **强调按钮（Accent Button）** 模式
-- **辅助功能区（Utility Area）**：右侧聊天按钮图标，提供快速访问聊天功能
-
-#### 2.2 上下文区域（Context Area）
+#### 2.1 上下文区域（Context Area）
 
 - **URL 信息栏（URL Info Bar）**：显示当前网页标题和URL，采用 **源信息展示（Source Attribution）** 设计模式
-- **刷新控件（Refresh Control）**："刷新内容"按钮，使用 **次级按钮（Secondary Button）** 样式
+- **主操作按钮（Primary Action Button）**："开始摘要"按钮，使用 **强调按钮（Accent Button）** 样式，用于启动内容摘要功能
 
-#### 2.3 内容展示区（Content Display）
+#### 2.2 内容展示区（Content Display）
 
 - AI 响应卡片（AI Response Card）：
   - **头部标识（Header Badge）**：包含 AI 模型标识（"custom"）
@@ -34,7 +28,7 @@
   - **内容区块（Content Block）**：使用 **卡片嵌套（Nested Card）** 设计，深灰色背景区分主体
   - **结构化内容（Structured Content）**：采用多级列表展示，包含标题、作者、日期等元数据，使用 **信息层级（Information Hierarchy）** 设计原则
 
-#### 2.4 输入区域（Input Area）
+#### 2.3 输入区域（Input Area）
 
 - **文本输入框（Text Input Field）**：底部的消息输入区，采用 **悬浮输入（Floating Input）** 设计
 
@@ -123,26 +117,19 @@
 
 **定义**：`/src/js/modules/ai-chat.js` (25-77行) - 动态生成HTML
 
-### 4.1 内容头部（Content Header）
-
-- 容器：`.chat-header` (27-32行)
-- 标题：`h2[data-i18n="chat.header"]` (28行)
-- 摘要按钮：`#summarize-btn` (30行)
-
-### 4.2 上下文区域（Context Area）
+### 4.1 上下文区域（Context Area）
 
 - 容器：`#page-info` (33-39行)
 - 页面标题：`#page-title` (35行)
 - 页面URL：`#page-url` (36行)
-- 刷新按钮：`#refresh-page-content` (38行)
+- 摘要按钮：`#refresh-page-content` (38行) - 功能为"开始摘要"
 
-
-### 4.3 消息区域（Message Area）
+### 4.2 消息区域（Message Area）
 
 - 容器：`#chat-messages` (40-42行)
 - 消息元素：动态生成 - 参见`createMessageElement()` 函数
 
-### 4.4 输入区域（Input Area）
+### 4.3 输入区域（Input Area）
 
 - 容器：`.chat-input-wrapper` (43-60行)
 - 辅助按钮区：`.chat-actions` (44-51行)
@@ -151,7 +138,7 @@
 - 输入框：`#chat-input`  (53行)
 - 发送按钮：`#send-button` (55-57行)
 
-### 4.5 历史记录弹窗
+### 4.4 历史记录弹窗
 
 - 容器：`#history-popup` (64-76行)
 - 标题：`h3[data-i18n="chat.historyTitle"]` (66行)
