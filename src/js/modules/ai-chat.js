@@ -205,7 +205,7 @@ export function loadAIChat(container) {
                 // 重置状态
                 isSummarizing = false;
                 refreshPageContentButton.disabled = false;
-                refreshPageContentButton.textContent = t('chat.summarize', '开始摘要');
+                refreshPageContentButton.textContent = t('chat.summarize', '摘要');
             }
         });
     }
@@ -232,7 +232,7 @@ export function loadAIChat(container) {
             currentSummaryMessageId = null;
 
             // 移除"正在生成摘要...#网页内容摘要"
-            const summaryText = fullSummaryContent.replace('正在生成摘要...', '');
+            const summaryText = fullSummaryContent.replace('正在生成摘要...#', '');
             summaryContentElement.innerHTML = renderMarkdown(summaryText);
 
             // 添加操作按钮
@@ -302,7 +302,7 @@ export function loadAIChat(container) {
             fullSummaryContent += data.content;
 
             // 移除可能的提示文本
-            const cleanContent = fullSummaryContent.replace(/正在生成摘要\.+#\s*网页内容摘要|摘要：/g, '');
+            const cleanContent = fullSummaryContent.replace("网页内容摘要 # ", '');
 
             // 直接渲染完整内容
             summaryContentElement.innerHTML = renderMarkdown(cleanContent);
@@ -322,7 +322,7 @@ export function loadAIChat(container) {
         // 重置状态
         isSummarizing = false;
         refreshPageContentButton.disabled = false;
-        refreshPageContentButton.textContent = t('chat.summarize', '开始摘要');
+        refreshPageContentButton.textContent = t('chat.summarize', '摘要');
         currentSummaryMessageId = null;
     }
 

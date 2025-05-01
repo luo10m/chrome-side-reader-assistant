@@ -22,7 +22,7 @@
     "systemMessage": "聊天历史已清除。开始新的对话。",
     "welcomeMessage": "你好，今天我能帮你什么忙？",
     "regenerate": "重新生成回复",
-    "summarize": "开始摘要",
+    "summarize": "摘要",
     "summarizing": "正在摘要...",
     "refreshContent": "刷新内容"
   },
