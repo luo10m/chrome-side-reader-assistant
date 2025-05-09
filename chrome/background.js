@@ -1,3 +1,6 @@
+// Import page-cache-listener.js
+importScripts('../src/js/background/page-cache-listener.js');
+
 // Set panel behavior to open on action click
 chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
@@ -268,7 +271,9 @@ async function summarizeWithOpenAI(tabId, url, title, content, settings) {
 
                             // 解析 JSON 数据
                             try {
-                                const json = JSON.parse(data);
+                                // Attempt to sanitize the JSON data before parsing
+                                const sanitizedData = data.trim();
+                                const json = JSON.parse(sanitizedData);
                                 const content = json.choices?.[0]?.delta?.content || '';
 
                                 if (content) {
@@ -284,6 +289,7 @@ async function summarizeWithOpenAI(tabId, url, title, content, settings) {
                                 }
                             } catch (e) {
                                 console.error('Failed to parse JSON from stream:', e);
+                                console.debug('Problematic JSON data:', data);
                             }
                         }
                     }
@@ -481,7 +487,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
                                 for (const line of lines) {
                                     try {
-                                        const data = JSON.parse(line);
+                                        // Sanitize the line before parsing
+                                        const sanitizedLine = line.trim();
+                                        // Skip empty lines
+                                        if (!sanitizedLine) continue;
+                                        
+                                        const data = JSON.parse(sanitizedLine);
 
                                         if (data.response) {
                                             fullResponse += data.response;
@@ -496,6 +507,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                                         }
                                     } catch (e) {
                                         console.debug('Error parsing JSON line:', e);
+                                        console.debug('Problematic JSON line:', line);
                                     }
                                 }
                             } catch (e) {
@@ -541,18 +553,42 @@ async function processSummarizeRequest(tabId, sendResponse) {
     try {
         // 检查缓存中是否有页面内容
         if (!pageCache[tabId]) {
+            console.log(`Tab ${tabId} 没有缓存内容，尝试提取页面内容`);
+            
+            // 发送初始成功响应，表示我们正在处理请求
+            // 这样用户界面可以立即显示加载状态
+            sendResponse({ success: true });
+            
             // 尝试获取页面内容
-            chrome.tabs.sendMessage(tabId, { action: 'extractPageContent' }, (response) => {
+            chrome.tabs.sendMessage(tabId, { action: 'extractPageContent' }, async (response) => {
+                // 如果提取失败，通知前端出错
                 if (chrome.runtime.lastError || !response || !response.success) {
-                    sendResponse({
-                        success: false,
-                        error: chrome.runtime.lastError ?
-                            chrome.runtime.lastError.message :
-                            'Failed to extract page content'
+                    const error = chrome.runtime.lastError ?
+                        chrome.runtime.lastError.message :
+                        'Failed to extract page content';
+                    
+                    console.error(`内容提取失败: ${error}`);
+                    chrome.runtime.sendMessage({
+                        action: 'summaryError',
+                        error: `无法提取页面内容: ${error}`
                     });
                 } else {
-                    // 内容已保存到缓存，可以继续处理
-                    sendResponse({ success: true });
+                    console.log('页面内容提取成功，等待缓存更新');
+                    
+                    // 等待一小段时间，让缓存更新
+                    setTimeout(async () => {
+                        // 再次检查缓存
+                        if (pageCache[tabId] && pageCache[tabId].content) {
+                            // 缓存已更新，继续处理摘要
+                            await processSummaryWithSettings(tabId);
+                        } else {
+                            console.error('提取后仍未找到缓存内容');
+                            chrome.runtime.sendMessage({
+                                action: 'summaryError',
+                                error: '提取内容后未能正确缓存'
+                            });
+                        }
+                    }, 1000); // 给内容提取和缓存一些时间
                 }
             });
             return;
@@ -563,53 +599,76 @@ async function processSummarizeRequest(tabId, sendResponse) {
 
         // 确保有内容可以摘要
         if (!pageInfo || !pageInfo.content) {
+            console.error(`Tab ${tabId} 缓存存在但内容为空`);
             sendResponse({ success: false, error: 'No content available for summarization' });
             return;
         }
-
+        
         // 发送成功响应，表示开始处理摘要
         sendResponse({ success: true });
-
-        // 从存储中直接获取最新设置，而不使用缓存的变量
-        chrome.storage.local.get(['settings'], async (result) => {
-            const settings = result.settings || defaultSettings;
-            console.log("当前AI设置(直接从存储获取):", {
-                defaultAI: settings.defaultAI,
-                hasApiKey: !!settings.openaiApiKey,
-                openaiModel: settings.openaiModel
-            });
-
-            // 检查OpenAI设置
-            if (settings.defaultAI === 'openai') {
-                if (!settings.openaiApiKey) {
-                    // 无API密钥时的错误处理
-                    chrome.runtime.sendMessage({
-                        action: 'summaryError',
-                        error: 'OpenAI API key is not configured'
-                    });
-                    return;
-                }
-                
-                try {
-                    // 使用OpenAI生成摘要，传入最新的设置
-                    await summarizeWithOpenAI(tabId, pageInfo.url, pageInfo.title, pageInfo.content, settings);
-                } catch (error) {
-                    console.error('Error summarizing with OpenAI:', error);
-                    chrome.runtime.sendMessage({
-                        action: 'summaryError',
-                        error: error.message || 'Error generating summary with OpenAI'
-                    });
-                }
-            } else {
-                // 其他AI服务暂不支持
-                chrome.runtime.sendMessage({
-                    action: 'summaryError',
-                    error: 'Only OpenAI is supported for summarization'
-                });
-            }
-        });
+        
+        // 处理摘要
+        await processSummaryWithSettings(tabId);
     } catch (error) {
         console.error('Error processing summarize request:', error);
+        chrome.runtime.sendMessage({
+            action: 'summaryError',
+            error: error.message || 'Unknown error during summarization'
+        });
+    }
+}
+
+// 新增：使用设置处理摘要的函数
+async function processSummaryWithSettings(tabId) {
+    try {
+        // 获取缓存的页面内容
+        const pageInfo = pageCache[tabId];
+        if (!pageInfo || !pageInfo.content) {
+            throw new Error('No content available for summarization');
+        }
+
+        // 从存储中直接获取最新设置
+        const result = await new Promise(resolve => {
+            chrome.storage.local.get(['settings'], resolve);
+        });
+        
+        const settings = result.settings || defaultSettings;
+        console.log("当前AI设置(直接从存储获取):", {
+            defaultAI: settings.defaultAI,
+            hasApiKey: !!settings.openaiApiKey,
+            openaiModel: settings.openaiModel
+        });
+
+        // 检查OpenAI设置
+        if (settings.defaultAI === 'openai') {
+            if (!settings.openaiApiKey) {
+                // 无API密钥时的错误处理
+                chrome.runtime.sendMessage({
+                    action: 'summaryError',
+                    error: 'OpenAI API key is not configured'
+                });
+                return;
+            }
+            
+            try {
+                // 使用OpenAI生成摘要，传入最新的设置
+                await summarizeWithOpenAI(tabId, pageInfo.url, pageInfo.title, pageInfo.content, settings);
+            } catch (error) {
+                console.error('Error summarizing with OpenAI:', error);
+                chrome.runtime.sendMessage({
+                    action: 'summaryError',
+                    error: error.message || 'Error generating summary with OpenAI'
+                });
+            }
+        } else {
+            // 其他AI服务暂不支持
+            chrome.runtime.sendMessage({
+                action: 'summaryError',
+                error: 'Only OpenAI is supported for summarization'
+            });
+        }
+    } catch (error) {
+        console.error('Error in processSummaryWithSettings:', error);
         chrome.runtime.sendMessage({
             action: 'summaryError',
             error: error.message || 'Unknown error during summarization'

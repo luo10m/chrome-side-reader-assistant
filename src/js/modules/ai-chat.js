@@ -100,11 +100,14 @@ export function loadAIChat(container) {
 
                 console.log(`初始化摘要按钮，当前标签页: ${tabId}, URL: ${currentTab.url}`);
 
-                // 先显示基本信息（在等待缓存检查期间）
+                // 显示页面基本信息
                 updatePageInfo(currentTab.title, currentTab.url);
                 pageInfoContainer.style.display = 'flex';
+                
+                // 始终启用摘要按钮，让用户可以尝试提取内容
+                refreshPageContentButton.disabled = false;
 
-                // 检查是否有页面缓存
+                // 检查是否有页面缓存（仅用于日志记录）
                 chrome.runtime.sendMessage({ action: 'getSettings' }, (settings) => {
                     chrome.storage.local.get(['pageCache'], (result) => {
                         const pageCache = result.pageCache || {};
@@ -112,18 +115,11 @@ export function loadAIChat(container) {
 
                         console.log('页面缓存信息:', tabInfo);
 
+                        // 无论是否有缓存，都显示页面信息并启用按钮
                         if (tabInfo && tabInfo.url === currentTab.url) {
-                            // 有缓存且URL匹配，启用摘要按钮
-                            refreshPageContentButton.disabled = false;
-                            pageInfoContainer.style.display = 'flex';
-                            pageTitleElement.textContent = tabInfo.title || '未知标题';
-                            pageUrlElement.textContent = tabInfo.url;
+                            console.log('找到页面缓存，将使用缓存内容');
                         } else {
-                            // 无缓存或URL不匹配，禁用摘要按钮但仍显示页面信息
-                            refreshPageContentButton.disabled = true;
-                            pageInfoContainer.style.display = 'flex';
-                            pageTitleElement.textContent = currentTab.title || '未知标题';
-                            pageUrlElement.textContent = currentTab.url;
+                            console.log('未找到页面缓存，将尝试提取内容');
                         }
                     });
                 });
