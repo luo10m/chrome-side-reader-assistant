@@ -156,7 +156,7 @@ async function summarizeWithOpenAI(tabId, url, title, content, settings) {
         });
         settings = result.settings || defaultSettings;
     }
-    
+
     const apiKey = settings.openaiApiKey;
     if (!apiKey) throw new Error('OpenAI API Key is not configured');
 
@@ -184,7 +184,7 @@ async function summarizeWithOpenAI(tabId, url, title, content, settings) {
 2. 解释关键概念和术语，确保我理解作者使用的专业词汇。
 3. 分析作者的推理过程：论证逻辑是否健全，证据是否充分。
 4. 提供批判性思考视角：指出文章的优点和可能的不足之处。
-5. 总结文章的核心价值和适用场景。
+5. 总结文章的核心价值和适用场景
 
 记住，目标不是简单总结文章内容，而是帮助我更深入地理解和评价文章。
 
@@ -201,9 +201,14 @@ async function summarizeWithOpenAI(tabId, url, title, content, settings) {
 请以苏格拉底式的提问方式，引导我思考文本的真实性、准确性和完整性。
 
 输出格式：
-**内容总结**
 
-**批判性分析**`;
+**内容总结**
+{{列表形式输出总结}}
+**批判性分析**
+{{详尽又犀利的批判性分析}}
+**深入思考**
+{{苏格拉底的提问}}
+`;
 
         // 准备请求
         const baseUrl = settings.openaiBaseUrl || 'https://api.openai.com/v1';
@@ -491,7 +496,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                                         const sanitizedLine = line.trim();
                                         // Skip empty lines
                                         if (!sanitizedLine) continue;
-                                        
+
                                         const data = JSON.parse(sanitizedLine);
 
                                         if (data.response) {
@@ -554,11 +559,11 @@ async function processSummarizeRequest(tabId, sendResponse) {
         // 检查缓存中是否有页面内容
         if (!pageCache[tabId]) {
             console.log(`Tab ${tabId} 没有缓存内容，尝试提取页面内容`);
-            
+
             // 发送初始成功响应，表示我们正在处理请求
             // 这样用户界面可以立即显示加载状态
             sendResponse({ success: true });
-            
+
             // 尝试获取页面内容
             chrome.tabs.sendMessage(tabId, { action: 'extractPageContent' }, async (response) => {
                 // 如果提取失败，通知前端出错
@@ -566,7 +571,7 @@ async function processSummarizeRequest(tabId, sendResponse) {
                     const error = chrome.runtime.lastError ?
                         chrome.runtime.lastError.message :
                         'Failed to extract page content';
-                    
+
                     console.error(`内容提取失败: ${error}`);
                     chrome.runtime.sendMessage({
                         action: 'summaryError',
@@ -574,7 +579,7 @@ async function processSummarizeRequest(tabId, sendResponse) {
                     });
                 } else {
                     console.log('页面内容提取成功，等待缓存更新');
-                    
+
                     // 等待一小段时间，让缓存更新
                     setTimeout(async () => {
                         // 再次检查缓存
@@ -603,10 +608,10 @@ async function processSummarizeRequest(tabId, sendResponse) {
             sendResponse({ success: false, error: 'No content available for summarization' });
             return;
         }
-        
+
         // 发送成功响应，表示开始处理摘要
         sendResponse({ success: true });
-        
+
         // 处理摘要
         await processSummaryWithSettings(tabId);
     } catch (error) {
@@ -631,7 +636,7 @@ async function processSummaryWithSettings(tabId) {
         const result = await new Promise(resolve => {
             chrome.storage.local.get(['settings'], resolve);
         });
-        
+
         const settings = result.settings || defaultSettings;
         console.log("当前AI设置(直接从存储获取):", {
             defaultAI: settings.defaultAI,
@@ -649,7 +654,7 @@ async function processSummaryWithSettings(tabId) {
                 });
                 return;
             }
-            
+
             try {
                 // 使用OpenAI生成摘要，传入最新的设置
                 await summarizeWithOpenAI(tabId, pageInfo.url, pageInfo.title, pageInfo.content, settings);
@@ -681,15 +686,15 @@ function validateOpenAISettings() {
     return new Promise((resolve) => {
         chrome.storage.local.get(['settings'], (result) => {
             const settings = result.settings || {};
-            const isValid = settings.openaiApiKey && 
-                           settings.defaultAI === 'openai';
-            
+            const isValid = settings.openaiApiKey &&
+                settings.defaultAI === 'openai';
+
             console.log("OpenAI设置验证:", {
                 isValid,
                 defaultAI: settings.defaultAI,
                 hasApiKey: !!settings.openaiApiKey
             });
-            
+
             resolve(isValid);
         });
     });
