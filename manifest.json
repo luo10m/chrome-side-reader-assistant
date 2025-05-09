@@ -51,6 +51,8 @@
         "<all_urls>"
       ],
       "js": [
+        "lib/JSDOMParser.js",
+        "lib/Readability.js",
         "src/js/content-script.js"
       ]
     }

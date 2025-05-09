@@ -152,7 +152,7 @@ export function loadAIChat(container) {
         startSummarize();
     }
 
-    // 新增：开始摘要 - 更新以支持页面级别独立聊天
+    // 新增：开始摘要 - 更新以支持页面级别独立聊天并检查OpenAI设置
     function startSummarize() {
         if (isSummarizing || !currentTabId) return;
 

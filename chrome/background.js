@@ -144,9 +144,16 @@ function cacheHistory(url, title, pageText, summaryText) {
     });
 }
 
-// 修改：使用OpenAI API生成摘要，支持标签页ID
-async function summarizeWithOpenAI(tabId, url, title, content) {
-    const settings = await loadSettings();
+// 修改：使用OpenAI API生成摘要，支持标签页ID和传入的设置
+async function summarizeWithOpenAI(tabId, url, title, content, settings) {
+    // 如果没有传入设置，则从存储中获取
+    if (!settings) {
+        const result = await new Promise(resolve => {
+            chrome.storage.local.get(['settings'], resolve);
+        });
+        settings = result.settings || defaultSettings;
+    }
+    
     const apiKey = settings.openaiApiKey;
     if (!apiKey) throw new Error('OpenAI API Key is not configured');
 
@@ -196,8 +203,8 @@ async function summarizeWithOpenAI(tabId, url, title, content) {
 **批判性分析**`;
 
         // 准备请求
-        const baseUrl = currentSettings.openaiBaseUrl || 'https://api.openai.com/v1';
-        const model = currentSettings.openaiCustomModel || currentSettings.openaiModel || 'gpt-3.5-turbo';
+        const baseUrl = settings.openaiBaseUrl || 'https://api.openai.com/v1';
+        const model = settings.openaiCustomModel || settings.openaiModel || 'gpt-3.5-turbo';
 
         const response = await fetch(`${baseUrl}/chat/completions`, {
             method: 'POST',
@@ -398,8 +405,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     // 处理获取设置请求
     else if (request.action === 'getSettings') {
-        // 返回当前设置
-        sendResponse(currentSettings);
+        // 加载并返回最新设置
+        loadSettings().then(settings => {
+            sendResponse(settings);
+        });
         return true;
     }
     // 处理更新设置请求
@@ -423,6 +432,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
 
         // 返回 true 表示响应将异步发送
+        return true;
+    }
+    // 处理打开设置页面请求
+    else if (request.action === 'openSettings') {
+        // 打开选项页面
+        chrome.runtime.openOptionsPage();
+        sendResponse({ success: true });
         return true;
     }
     // 处理发送消息到Ollama
@@ -520,7 +536,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // 保持通道打开
 });
 
-// 新增：处理摘要请求的函数
+// 修改：处理摘要请求的函数
 async function processSummarizeRequest(tabId, sendResponse) {
     try {
         // 检查缓存中是否有页面内容
@@ -554,23 +570,70 @@ async function processSummarizeRequest(tabId, sendResponse) {
         // 发送成功响应，表示开始处理摘要
         sendResponse({ success: true });
 
-        // 使用 OpenAI API 生成摘要
-        const settings = await loadSettings();
-        if (settings.defaultAI === 'openai' && settings.openaiApiKey) {
-            await summarizeWithOpenAI(tabId, pageInfo.url, pageInfo.title, pageInfo.content);
-        } else {
-            // 其他 AI 服务的处理...或者报错
-            chrome.runtime.sendMessage({
-                action: 'summaryError',
-                error: settings.defaultAI === 'openai' ?
-                    'OpenAI API key is not configured' :
-                    'Only OpenAI is supported for summarization'
+        // 从存储中直接获取最新设置，而不使用缓存的变量
+        chrome.storage.local.get(['settings'], async (result) => {
+            const settings = result.settings || defaultSettings;
+            console.log("当前AI设置(直接从存储获取):", {
+                defaultAI: settings.defaultAI,
+                hasApiKey: !!settings.openaiApiKey,
+                openaiModel: settings.openaiModel
             });
-        }
+
+            // 检查OpenAI设置
+            if (settings.defaultAI === 'openai') {
+                if (!settings.openaiApiKey) {
+                    // 无API密钥时的错误处理
+                    chrome.runtime.sendMessage({
+                        action: 'summaryError',
+                        error: 'OpenAI API key is not configured'
+                    });
+                    return;
+                }
+                
+                try {
+                    // 使用OpenAI生成摘要，传入最新的设置
+                    await summarizeWithOpenAI(tabId, pageInfo.url, pageInfo.title, pageInfo.content, settings);
+                } catch (error) {
+                    console.error('Error summarizing with OpenAI:', error);
+                    chrome.runtime.sendMessage({
+                        action: 'summaryError',
+                        error: error.message || 'Error generating summary with OpenAI'
+                    });
+                }
+            } else {
+                // 其他AI服务暂不支持
+                chrome.runtime.sendMessage({
+                    action: 'summaryError',
+                    error: 'Only OpenAI is supported for summarization'
+                });
+            }
+        });
     } catch (error) {
         console.error('Error processing summarize request:', error);
-        // 错误已经在其他地方处理
+        chrome.runtime.sendMessage({
+            action: 'summaryError',
+            error: error.message || 'Unknown error during summarization'
+        });
     }
+}
+
+// 新增：验证OpenAI设置是否有效
+function validateOpenAISettings() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['settings'], (result) => {
+            const settings = result.settings || {};
+            const isValid = settings.openaiApiKey && 
+                           settings.defaultAI === 'openai';
+            
+            console.log("OpenAI设置验证:", {
+                isValid,
+                defaultAI: settings.defaultAI,
+                hasApiKey: !!settings.openaiApiKey
+            });
+            
+            resolve(isValid);
+        });
+    });
 }
 
 // 恢复: Send message to Ollama with streaming support
