@@ -1,0 +1,9 @@
+---
+description: Used when chrome-extension is needed, this is a guide for chrome-extension.
+globs: 
+alwaysApply: false
+---
+
+# chrome-extension Guide, Source Code and Examples
+
+- You can find the complete documentaion for chrome-extension at `.cursor/docs/chrome-extension-boilerplate-react-vite`

@@ -1,0 +1,113 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# IllusionReality Project Rules
+
+## Description
+When creating or modifying files in the IllusionReality backend project, follow these guidelines.
+
+## Pattern
+**/*.py
+
+## Rules
+
+1. **基本原则**: 
+   - 遵循MVP, KISS, SSOT, YAGNI, DRY五原则。保持代码简单清晰，专注于核心功能，避免不必要的复杂性，一次只解决一个问题。
+   - 分析问题的方法：按第一性原则分析最佳方案 > 推导合理性 > 验证 > 实施
+
+2. **代码风格**: 
+   - 遵循PEP 8风格指南
+   - 使用4个空格缩进
+   - 行长度限制在120个字符以内
+   - 使用类型注解增强代码可读性
+   - 所有函数和方法必须有文档字符串
+   - 使用f-string进行字符串格式化
+   - 避免使用全局变量
+
+3. **命名规范**:
+   - 类名使用大驼峰命名法（PascalCase）
+   - 函数名和方法名使用小写字母和下划线（snake_case）
+   - 私有方法前加下划线（_method_name）
+   - 常量使用全大写和下划线（CONSTANT_NAME）
+   - 布尔类型变量应以is_、has_、can_等开头
+
+4. **异步编程规范**:
+   - 所有I/O操作必须使用异步方式
+   - 异步函数名应体现其异步特性
+   - 使用asyncio.gather并行执行多个异步任务
+   - 正确处理异步异常
+   - 异步锁应谨慎使用，避免死锁
+
+5. **错误处理**:
+   - 使用自定义异常类表示不同类型的错误
+   - 只捕获预期的异常，避免捕获通用Exception
+   - 异常应包含足够的上下文信息
+   - 在适当的层次处理异常，不应在底层捕获后忽略
+
+6. **日志规范**:
+   - 使用项目统一的日志工具（从app.config.settings导入get_logger）
+   - 合理使用日志级别（ERROR, WARNING, INFO, DEBUG）
+   - 日志信息应简洁明了，包含必要的上下文
+
+7. **代码修改铁律**:
+   - 任何代码修改都必须有明确的理由和目的
+   - 不要修改已经稳定工作的代码，除非有充分理由
+   - 如果不确定，就不要修改它
+   - 小步迭代，确保每一步可控
+
+8. **目录结构规范**:
+   - 核心逻辑放在app/core/
+   - 数据模型放在app/models/
+   - API路由放在app/routes/
+   - 服务实现放在app/services/
+   - 辅助工具放在app/utils/
+   - 配置放在app/config/
+   - 测试案例放在/tests/
+   - 调试脚本放在/scripts/
+   - 示例脚本放在/examples/
+
+9. **测试规范**:
+   - **异步测试优先**: 由于项目是异步服务端，所有测试必须首先考虑异步操作
+   - **测试脚本路径**: 测试脚本必须放在/tests/目录下相应的路径下，避免污染项目结构
+   - 使用`@pytest.mark.asyncio`装饰器标记异步测试函数
+   - 使用`AsyncMock`模拟异步方法的返回值
+   - 确保异步函数的所有调用都使用`await`关键字
+   - 编写测试时应覆盖成功路径和各种异常场景
+   - 针对关键功能必须有相应测试用例，尤其是异步操作
+   - 测试数据库操作时使用临时数据库或内存模式
+   - 使用pytest的fixture机制管理测试依赖和资源
+
+10. **提示词模板规范**:
+   - **模板格式**: 所有提示词必须使用Jinja2模板格式，存放在项目根目录的`prompts/`目录下
+   - **目录结构**: 按功能模块组织子目录，如`prompts/memory/extraction/`，`prompts/memory/summary/`等
+   - **文件命名**: 模板文件使用`.j2`后缀，如`general.j2`
+   - **模板元信息**: 模板头部必须包含版本、日期、作者和描述等元信息，使用Jinja2注释格式`{# #}`
+   - **模板使用**: 通过`app/core/prompting/template_loader`加载模板，避免硬编码提示词
+   - **错误处理**: 使用模板时需提供默认回退机制，以防模板加载失败
+
+11. **输出语言**: 所有响应请使用中文。
+
+12. **项目结构**:
+@file=/project_structure.txt
+
+
+## 项目开发规则与常见坑
+
+1. 跨平台路径兼容
+- 所有路径处理必须使用 pathlib，存储和比较时统一用 `/` 分隔，避免 Windows/Linux/MacOS 差异导致的 bug。
+
+2. LLM Prompt 设计
+- 使用 response_format={"type": "json_object"} 时，提示词中必须明确包含 "json" 字样，否则模型可能不会严格输出 JSON 格式。
+
+3. Pydantic 模型设计
+- 不允许字段名以**下划线**开头
+
+

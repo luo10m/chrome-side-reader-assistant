@@ -1,0 +1,9 @@
+---
+description: Used when nanobrowser is needed, this is a guide for nanobrowser.
+globs: 
+alwaysApply: false
+---
+
+# nanobrowser Guide, Source Code and Examples
+
+- You can find the complete documentaion for nanobrowser at `docs/ref/nanobrowser`

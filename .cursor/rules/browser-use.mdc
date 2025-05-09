@@ -1,0 +1,9 @@
+---
+description: Used when browser-use is needed, this is a guide for browser-use.
+globs: 
+alwaysApply: false
+---
+
+# browser-use Guide, Source Code and Examples
+
+- You can find the complete documentaion for browser-use at `.cursor/docs/browser-use`
