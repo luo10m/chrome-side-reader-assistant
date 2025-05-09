@@ -147,6 +147,117 @@ export function loadAIChat(container) {
         // 调用开始摘要函数
         startSummarize();
     }
+    
+    // 新增：渲染Twitter富媒体内容
+    function renderTwitterContent(tabInfo) {
+        if (!tabInfo || !tabInfo.isTwitter || !tabInfo.richData) {
+            return null;
+        }
+        
+        // 创建富媒体容器
+        const richMediaContainer = document.createElement('div');
+        richMediaContainer.className = 'twitter-rich-content';
+        
+        // 添加作者信息（如果有）
+        if (tabInfo.author) {
+            const authorElement = document.createElement('div');
+            authorElement.className = 'twitter-author';
+            authorElement.textContent = tabInfo.author;
+            richMediaContainer.appendChild(authorElement);
+        }
+        
+        // 添加HTML格式的推文内容（如果有）
+        if (tabInfo.richData.html) {
+            const contentElement = document.createElement('div');
+            contentElement.className = 'twitter-text';
+            contentElement.innerHTML = tabInfo.richData.html;
+            richMediaContainer.appendChild(contentElement);
+        }
+        
+        // 添加图片（如果有）
+        if (tabInfo.richData.images && tabInfo.richData.images.length > 0) {
+            const imagesContainer = document.createElement('div');
+            imagesContainer.className = 'twitter-images';
+            
+            // 根据图片数量设置不同的布局类
+            imagesContainer.classList.add(`image-count-${Math.min(tabInfo.richData.images.length, 4)}`);
+            
+            tabInfo.richData.images.forEach(imgSrc => {
+                const imgWrapper = document.createElement('div');
+                imgWrapper.className = 'image-wrapper';
+                
+                const img = document.createElement('img');
+                img.src = imgSrc;
+                img.alt = 'Tweet image';
+                img.loading = 'lazy';
+                
+                // 添加点击放大功能
+                img.addEventListener('click', () => {
+                    const modal = document.createElement('div');
+                    modal.className = 'image-modal';
+                    modal.innerHTML = `
+                        <div class="modal-content">
+                            <img src="${imgSrc}" alt="Full size image">
+                            <button class="close-modal">×</button>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                    
+                    // 关闭模态框
+                    modal.querySelector('.close-modal').addEventListener('click', () => {
+                        modal.remove();
+                    });
+                    
+                    // 点击背景关闭
+                    modal.addEventListener('click', (e) => {
+                        if (e.target === modal) {
+                            modal.remove();
+                        }
+                    });
+                });
+                
+                imgWrapper.appendChild(img);
+                imagesContainer.appendChild(imgWrapper);
+            });
+            
+            richMediaContainer.appendChild(imagesContainer);
+        }
+        
+        // 添加视频（如果有）
+        if (tabInfo.richData.videos && tabInfo.richData.videos.length > 0) {
+            const videosContainer = document.createElement('div');
+            videosContainer.className = 'twitter-videos';
+            
+            tabInfo.richData.videos.forEach(videoSrc => {
+                if (videoSrc) {
+                    const videoElement = document.createElement('video');
+                    videoElement.controls = true;
+                    videoElement.src = videoSrc;
+                    videoElement.className = 'twitter-video';
+                    videosContainer.appendChild(videoElement);
+                }
+            });
+            
+            richMediaContainer.appendChild(videosContainer);
+        }
+        
+        // 添加推文链接
+        if (tabInfo.url) {
+            const linkContainer = document.createElement('div');
+            linkContainer.className = 'twitter-link';
+            
+            const link = document.createElement('a');
+            link.href = tabInfo.url;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = '查看原始推文';
+            
+            linkContainer.appendChild(link);
+            richMediaContainer.appendChild(linkContainer);
+        }
+        
+        return richMediaContainer;
+    }
 
     // 新增：开始摘要 - 更新以支持页面级别独立聊天并检查OpenAI设置
     function startSummarize() {
@@ -184,25 +295,67 @@ export function loadAIChat(container) {
 
         // 滚动到底部
         chatMessages.scrollTop = chatMessages.scrollHeight;
-
-        // 发送摘要请求，包含当前标签页ID
-        chrome.runtime.sendMessage({
-            action: 'summarizePage',
-            tabId: currentTabId
-        }, (response) => {
-            if (chrome.runtime.lastError || !response || !response.success) {
-                const error = chrome.runtime.lastError ?
-                    chrome.runtime.lastError.message :
-                    (response && response.error ? response.error : '未知错误');
-
-                // 显示错误
-                summaryContentElement.innerHTML = `<div class="error-message">摘要生成失败: ${error}</div>`;
-
-                // 重置状态
-                isSummarizing = false;
-                refreshPageContentButton.disabled = false;
-                refreshPageContentButton.textContent = t('chat.summarize', '摘要');
+        
+        // 检查是否有Twitter富媒体内容
+        chrome.storage.local.get(['pageCache'], (result) => {
+            const pageCache = result.pageCache || {};
+            const tabInfo = pageCache[currentTabId];
+            
+            // 如果是Twitter页面且有富媒体内容，先渲染富媒体内容
+            if (tabInfo && tabInfo.isTwitter && tabInfo.richData) {
+                console.log('检测到Twitter富媒体内容，渲染中...');
+                
+                // 创建富媒体容器
+                const twitterContentContainer = document.createElement('div');
+                twitterContentContainer.className = 'twitter-content-container';
+                
+                // 渲染Twitter富媒体内容
+                const richContent = renderTwitterContent(tabInfo);
+                if (richContent) {
+                    twitterContentContainer.appendChild(richContent);
+                    
+                    // 添加分隔线
+                    const divider = document.createElement('div');
+                    divider.className = 'content-divider';
+                    twitterContentContainer.appendChild(divider);
+                    
+                    // 清除加载指示器，添加富媒体内容
+                    summaryContentElement.innerHTML = '';
+                    summaryContentElement.appendChild(twitterContentContainer);
+                    
+                    // 添加摘要加载指示器
+                    const summaryLoadingIndicator = document.createElement('div');
+                    summaryLoadingIndicator.className = 'loading-indicator';
+                    summaryLoadingIndicator.textContent = '生成摘要中...';
+                    summaryContentElement.appendChild(summaryLoadingIndicator);
+                }
             }
+            
+            // 发送摘要请求，包含当前标签页ID
+            chrome.runtime.sendMessage({
+                action: 'summarizePage',
+                tabId: currentTabId
+            }, (response) => {
+                if (chrome.runtime.lastError || !response || !response.success) {
+                    const error = chrome.runtime.lastError ?
+                        chrome.runtime.lastError.message :
+                        (response && response.error ? response.error : '未知错误');
+
+                    // 显示错误
+                    // 如果有Twitter内容，保留富媒体内容，只替换加载指示器
+                    const loadingIndicator = summaryContentElement.querySelector('.loading-indicator');
+                    if (loadingIndicator) {
+                        loadingIndicator.innerHTML = `<div class="error-message">摘要生成失败: ${error}</div>`;
+                    } else {
+                        summaryContentElement.innerHTML = `<div class="error-message">摘要生成失败: ${error}</div>`;
+                    }
+
+                    // 重置状态
+                    isSummarizing = false;
+                    refreshPageContentButton.disabled = false;
+                    refreshPageContentButton.textContent = t('chat.summarize', '摘要');
+                }
+            });
         });
     }
 
@@ -214,7 +367,19 @@ export function loadAIChat(container) {
 
         if (currentSummaryMessageId === null) {
             currentSummaryMessageId = data.messageId;
-            summaryContentElement.innerHTML = ''; // 清除加载指示器
+            
+            // 检查是否有Twitter富媒体内容
+            const twitterContainer = summaryContentElement.querySelector('.twitter-content-container');
+            const loadingIndicator = summaryContentElement.querySelector('.loading-indicator');
+            
+            // 如果有Twitter富媒体内容，只清除加载指示器
+            if (twitterContainer && loadingIndicator) {
+                loadingIndicator.remove();
+            } else {
+                // 否则清除所有内容
+                summaryContentElement.innerHTML = '';
+            }
+            
             fullSummaryContent = ''; // 重置累积内容
         }
 
@@ -229,7 +394,20 @@ export function loadAIChat(container) {
 
             // 移除"正在生成摘要...#网页内容摘要"
             const summaryText = fullSummaryContent.replace('正在生成摘要...#', '');
-            summaryContentElement.innerHTML = renderMarkdown(summaryText);
+            
+            // 检查是否有Twitter富媒体内容
+            const twitterContainer = summaryContentElement.querySelector('.twitter-content-container');
+            
+            if (twitterContainer) {
+                // 如果有Twitter富媒体内容，添加摘要到富媒体内容之后
+                const summaryElement = document.createElement('div');
+                summaryElement.className = 'summary-text';
+                summaryElement.innerHTML = renderMarkdown(summaryText);
+                summaryContentElement.appendChild(summaryElement);
+            } else {
+                // 如果没有Twitter富媒体内容，直接渲染摘要
+                summaryContentElement.innerHTML = renderMarkdown(summaryText);
+            }
 
             // 添加操作按钮
             const actionsElement = document.createElement('div');
@@ -299,9 +477,27 @@ export function loadAIChat(container) {
 
             // 移除可能的提示文本
             const cleanContent = fullSummaryContent.replace("网页内容摘要 # ", '');
-
-            // 直接渲染完整内容
-            summaryContentElement.innerHTML = renderMarkdown(cleanContent);
+            
+            // 检查是否有Twitter富媒体内容
+            const twitterContainer = summaryContentElement.querySelector('.twitter-content-container');
+            
+            if (twitterContainer) {
+                // 如果有Twitter富媒体内容，检查是否已有摘要元素
+                let summaryElement = summaryContentElement.querySelector('.summary-text');
+                
+                if (!summaryElement) {
+                    // 如果没有摘要元素，创建一个
+                    summaryElement = document.createElement('div');
+                    summaryElement.className = 'summary-text';
+                    summaryContentElement.appendChild(summaryElement);
+                }
+                
+                // 更新摘要内容
+                summaryElement.innerHTML = renderMarkdown(cleanContent);
+            } else {
+                // 如果没有Twitter富媒体内容，直接渲染摘要
+                summaryContentElement.innerHTML = renderMarkdown(cleanContent);
+            }
 
             // 滚动到底部
             chatMessages.scrollTop = chatMessages.scrollHeight;
