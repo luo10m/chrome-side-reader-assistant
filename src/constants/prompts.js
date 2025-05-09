@@ -1,8 +1,8 @@
-export const DEFAULT_PROMPTS = [
+export const CRITICAL_THINKING_PROMPTS = [
     {
         id: 'critical-thinking',
-        name: '学会提问',
-        description: '基于《学会提问》的批判性思维分析框架',
+        name: '批判性思维',
+        description: '批判性思维分析框架',
         content: `第一步，你是一位阅读教练，以《如何阅读一本书》的方法论为指导。请帮我分析以下文本内容：
 
 1. 首先进行结构分析：找出文章的主要部分，确定作者的核心论点和支持论点。
