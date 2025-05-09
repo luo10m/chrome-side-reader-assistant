@@ -1,7 +1,7 @@
 // Set panel behavior to open on action click
 chrome.sidePanel
-  .setPanelBehavior({ openPanelOnActionClick: true })
-  .catch((error) => console.error(error));
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch((error) => console.error(error));
 
 // custom settings
 const defaultSettings = {
@@ -25,7 +25,7 @@ const defaultSettings = {
         }
     ],
     activePromptId: 'default',
-    openaiApiKey: '',   
+    openaiApiKey: '',
     openaiBaseUrl: 'https://api.openai.com/v1',
     openaiModel: 'gpt-3.5-turbo',
     openaiCustomModel: '',
@@ -46,12 +46,12 @@ function loadSettings() {
                 // merge default settings and stored settings
                 currentSettings = { ...defaultSettings, ...result.settings };
             }
-            
+
             // 加载页面缓存
             if (result.pageCache) {
                 pageCache = result.pageCache;
             }
-            
+
             resolve(currentSettings);
         });
     });
@@ -62,7 +62,7 @@ function saveSettings(settings) {
     return new Promise((resolve) => {
         // ensure all required settings exist
         const newSettings = { ...currentSettings, ...settings };
-        
+
         chrome.storage.local.set({ settings: newSettings }, () => {
             currentSettings = newSettings;
             resolve(currentSettings);
@@ -74,7 +74,7 @@ function saveSettings(settings) {
 function upsertPageCache(tabId, url, title, content) {
     // 确保tabId存在
     if (!tabId) return;
-    
+
     // 更新缓存
     pageCache[tabId] = {
         url,
@@ -82,22 +82,22 @@ function upsertPageCache(tabId, url, title, content) {
         content,
         timestamp: Date.now()
     };
-    
+
     // 如果缓存超过最大限制，删除最旧的条目
     const tabIds = Object.keys(pageCache);
     if (tabIds.length > MAX_PAGE_CACHE) {
         // 按时间戳排序
-        const sortedTabIds = tabIds.sort((a, b) => 
+        const sortedTabIds = tabIds.sort((a, b) =>
             pageCache[a].timestamp - pageCache[b].timestamp
         );
-        
+
         // 删除最旧的条目
         delete pageCache[sortedTabIds[0]];
     }
-    
+
     // 保存到storage
     chrome.storage.local.set({ pageCache });
-    
+
     console.log(`Page cache updated for tab ${tabId}, total cache entries: ${Object.keys(pageCache).length}`);
 }
 
@@ -107,7 +107,7 @@ function cacheHistory(url, title, pageText, summaryText) {
         chrome.storage.local.get(['chatHistory'], (result) => {
             let history = result.chatHistory || [];
             const chatId = Date.now().toString();
-            
+
             // 添加URL消息
             history.push({
                 id: chatId,
@@ -135,7 +135,7 @@ function cacheHistory(url, title, pageText, summaryText) {
                 ],
                 timestamp: Date.now()
             });
-            
+
             // 保存历史
             chrome.storage.local.set({ chatHistory: history }, () => {
                 resolve();
@@ -146,17 +146,18 @@ function cacheHistory(url, title, pageText, summaryText) {
 
 // 修改：使用OpenAI API生成摘要，支持标签页ID
 async function summarizeWithOpenAI(tabId, url, title, content) {
-    const apiKey = currentSettings.openaiApiKey;
+    const settings = await loadSettings();
+    const apiKey = settings.openaiApiKey;
     if (!apiKey) throw new Error('OpenAI API Key is not configured');
 
     const messageId = Date.now().toString();
-    
+
     // 截断内容，防止token过多
     const MAX_CONTENT_LENGTH = 10000;
-    const truncatedContent = content.length > MAX_CONTENT_LENGTH 
+    const truncatedContent = content.length > MAX_CONTENT_LENGTH
         ? content.substring(0, MAX_CONTENT_LENGTH) + '...(content truncated)'
         : content;
-    
+
     try {
         // 通知侧边栏开始摘要
         chrome.runtime.sendMessage({
@@ -165,7 +166,7 @@ async function summarizeWithOpenAI(tabId, url, title, content) {
             done: false,
             content: '正在生成摘要...'
         });
-        
+
         // 使用批判性思维提示词作为系统消息
         const systemPrompt = `第一步，你是一位阅读教练，以《如何阅读一本书》的方法论为指导。请帮我分析以下文本内容：
 
@@ -193,11 +194,11 @@ async function summarizeWithOpenAI(tabId, url, title, content) {
 **内容总结**
 
 **批判性分析**`;
-        
+
         // 准备请求
         const baseUrl = currentSettings.openaiBaseUrl || 'https://api.openai.com/v1';
         const model = currentSettings.openaiCustomModel || currentSettings.openaiModel || 'gpt-3.5-turbo';
-        
+
         const response = await fetch(`${baseUrl}/chat/completions`, {
             method: 'POST',
             headers: {
@@ -219,20 +220,20 @@ async function summarizeWithOpenAI(tabId, url, title, content) {
                 stream: true
             })
         });
-        
+
         if (!response.ok) {
             const error = await response.json();
             throw new Error(`OpenAI API error: ${error.error?.message || 'Unknown error'}`);
         }
-        
+
         // 处理流式响应
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let fullResponse = '';
-        
+
         while (true) {
             const { done, value } = await reader.read();
-            
+
             if (done) {
                 // 发送完成消息
                 chrome.runtime.sendMessage({
@@ -244,10 +245,10 @@ async function summarizeWithOpenAI(tabId, url, title, content) {
 
                 break;
             }
-            
+
             // 解码数据块
             const chunk = decoder.decode(value, { stream: true });
-            
+
             if (chunk) {
                 try {
                     // 处理 SSE 格式的数据块
@@ -257,15 +258,15 @@ async function summarizeWithOpenAI(tabId, url, title, content) {
                             const data = line.substring(6);
                             // 检查是否为 [DONE] 标记
                             if (data === '[DONE]') continue;
-                            
+
                             // 解析 JSON 数据
                             try {
                                 const json = JSON.parse(data);
                                 const content = json.choices?.[0]?.delta?.content || '';
-                                
+
                                 if (content) {
                                     fullResponse += content;
-                                    
+
                                     // 发送更新消息
                                     chrome.runtime.sendMessage({
                                         action: 'summaryStream',
@@ -284,7 +285,7 @@ async function summarizeWithOpenAI(tabId, url, title, content) {
                 }
             }
         }
-        
+
         // 摘要完成后，保存到页面缓存
         pageCache[tabId] = {
             ...pageCache[tabId],
@@ -292,17 +293,17 @@ async function summarizeWithOpenAI(tabId, url, title, content) {
             summaryTime: Date.now()
         };
         chrome.storage.local.set({ pageCache });
-        
+
         return fullResponse;
     } catch (error) {
         console.error('Summarization error:', error);
-        
+
         // 发送错误消息
         chrome.runtime.sendMessage({
             action: 'summaryError',
             error: error.message
         });
-        
+
         throw error;
     }
 }
@@ -320,6 +321,15 @@ chrome.commands.onCommand.addListener((command) => {
         });
     }
 });
+
+// 在background.js中添加监听器，当storage变化时更新currentSettings
+chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes.settings) {
+        currentSettings = changes.settings.newValue;
+        console.log('Settings updated in background:', currentSettings);
+    }
+});
+
 
 // 监听消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -339,13 +349,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({ success: false, error: 'No tab ID available' });
         }
         return true; // 保持消息通道打开
-    } 
+    }
     // 处理页面导航变化消息
     else if (request.action === 'pageNavigated') {
         const tabId = sender.tab ? sender.tab.id : null;
         if (tabId) {
             console.log(`Page navigated in tab ${tabId} from ${request.previousUrl} to ${request.newUrl}`);
-            
+
             // 转发消息给侧边栏
             chrome.runtime.sendMessage({
                 action: 'pageNavigated',
@@ -355,16 +365,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 newTitle: request.newTitle,
                 timestamp: request.timestamp
             });
-            
+
             // 发送成功响应
             sendResponse({ success: true });
         }
-    } 
+    }
     // 处理摘要请求
     else if (request.action === 'summarizePage') {
         // 使用请求中的tabId或尝试获取当前活动标签页
         let targetTabId = request.tabId;
-        
+
         // 如果没有提供特定的tabId，则尝试获取当前标签页
         if (!targetTabId) {
             chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
@@ -372,10 +382,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     sendResponse({ success: false, error: 'No active tab found' });
                     return;
                 }
-                
+
                 const currentTab = tabs[0];
                 targetTabId = currentTab.id;
-                
+
                 // 处理摘要请求
                 await processSummarizeRequest(targetTabId, sendResponse);
             });
@@ -383,7 +393,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             // 使用提供的tabId处理摘要请求
             processSummarizeRequest(targetTabId, sendResponse);
         }
-        
+
         return true; // 保持消息通道打开
     }
     // 处理获取设置请求
@@ -391,7 +401,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // 返回当前设置
         sendResponse(currentSettings);
         return true;
-    } 
+    }
     // 处理更新设置请求
     else if (request.action === 'updateSettings') {
         // 检查是否是重置设置请求
@@ -411,7 +421,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     sendResponse({ error: error.message });
                 });
         }
-        
+
         // 返回 true 表示响应将异步发送
         return true;
     }
@@ -419,10 +429,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     else if (request.action === 'sendMessageToOllama') {
         // 创建一个唯一的消息ID
         const messageId = Date.now().toString();
-        
+
         // 发送初始响应
         sendResponse({ messageId });
-        
+
         // 处理请求
         sendMessageToOllama(request.message, request.history, request.systemPrompt)
             .then(async (response) => {
@@ -430,11 +440,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     // 处理流式响应
                     const { reader, decoder } = response;
                     let fullResponse = '';
-                    
+
                     try {
                         while (true) {
                             const { done, value } = await reader.read();
-                            
+
                             if (done) {
                                 // 流结束，发送完整响应
                                 chrome.runtime.sendMessage({
@@ -445,21 +455,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                                 });
                                 break;
                             }
-                            
+
                             // 解码数据块
                             const chunk = decoder.decode(value, { stream: true });
-                            
+
                             // 处理数据块
                             try {
                                 const lines = chunk.split('\n').filter(line => line.trim());
-                                
+
                                 for (const line of lines) {
                                     try {
                                         const data = JSON.parse(line);
-                                        
+
                                         if (data.response) {
                                             fullResponse += data.response;
-                                            
+
                                             // 发送增量更新
                                             chrome.runtime.sendMessage({
                                                 action: 'ollamaResponse',
@@ -502,7 +512,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     error: error.message
                 });
             });
-        
+
         return true;
     }
     // 处理其他类型的请求
@@ -518,11 +528,11 @@ async function processSummarizeRequest(tabId, sendResponse) {
             // 尝试获取页面内容
             chrome.tabs.sendMessage(tabId, { action: 'extractPageContent' }, (response) => {
                 if (chrome.runtime.lastError || !response || !response.success) {
-                    sendResponse({ 
-                        success: false, 
-                        error: chrome.runtime.lastError ? 
-                            chrome.runtime.lastError.message : 
-                            'Failed to extract page content' 
+                    sendResponse({
+                        success: false,
+                        error: chrome.runtime.lastError ?
+                            chrome.runtime.lastError.message :
+                            'Failed to extract page content'
                     });
                 } else {
                     // 内容已保存到缓存，可以继续处理
@@ -531,19 +541,19 @@ async function processSummarizeRequest(tabId, sendResponse) {
             });
             return;
         }
-        
+
         // 获取缓存的页面内容
         const pageInfo = pageCache[tabId];
-        
+
         // 确保有内容可以摘要
         if (!pageInfo || !pageInfo.content) {
             sendResponse({ success: false, error: 'No content available for summarization' });
             return;
         }
-        
+
         // 发送成功响应，表示开始处理摘要
         sendResponse({ success: true });
-        
+
         // 使用 OpenAI API 生成摘要
         const settings = await loadSettings();
         if (settings.defaultAI === 'openai' && settings.openaiApiKey) {
@@ -552,8 +562,8 @@ async function processSummarizeRequest(tabId, sendResponse) {
             // 其他 AI 服务的处理...或者报错
             chrome.runtime.sendMessage({
                 action: 'summaryError',
-                error: settings.defaultAI === 'openai' ? 
-                    'OpenAI API key is not configured' : 
+                error: settings.defaultAI === 'openai' ?
+                    'OpenAI API key is not configured' :
                     'Only OpenAI is supported for summarization'
             });
         }
@@ -571,22 +581,22 @@ async function sendMessageToOllama(message, history, systemPrompt) {
         const ollamaModel = currentSettings.ollamaModel;
         const useProxy = currentSettings.useProxy;
         const useStreaming = currentSettings.useStreaming !== false; // 默认启用
-        
+
         // if proxy is enabled, use a CORS proxy
         if (useProxy) {
             ollamaUrl = `https://cors-anywhere.herokuapp.com/${ollamaUrl}`;
         }
-        
+
         console.log(`Sending request to ${ollamaUrl} with model ${ollamaModel}`);
-        
+
         // build the prompt text, including history messages and system prompt
         let prompt = "";
-        
+
         // add the system prompt (if any)
         if (systemPrompt) {
             prompt += `System: ${systemPrompt}\n`;
         }
-        
+
         // add the history messages (if any)
         if (history && history.length > 0) {
             for (const msg of history) {
@@ -597,12 +607,12 @@ async function sendMessageToOllama(message, history, systemPrompt) {
                 }
             }
         }
-        
+
         // add the current message
         prompt += `User: ${message}\nAssistant:`;
-        
+
         console.log("Formatted prompt:", prompt);
-        
+
         // use fetch API to send the request
         const response = await fetch(ollamaUrl, {
             method: 'POST',
@@ -619,19 +629,19 @@ async function sendMessageToOllama(message, history, systemPrompt) {
                 }
             })
         });
-        
+
         if (!response.ok) {
             console.error(`Ollama API error: ${response.status}`);
             const errorText = await response.text();
             console.error(`Error details: ${errorText}`);
             throw new Error(`Ollama API error: ${response.status}`);
         }
-        
+
         // if not streaming, return the full response
         if (!useStreaming) {
             const data = await response.json();
             console.log("Ollama response:", data);
-            
+
             return {
                 streaming: false,
                 reader: null,
@@ -640,12 +650,12 @@ async function sendMessageToOllama(message, history, systemPrompt) {
                 model: data.model || ollamaModel
             };
         }
-        
+
         // read the streaming response
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullResponse = '';
-        
+
         // return the objects needed for streaming response
         return {
             streaming: true,
