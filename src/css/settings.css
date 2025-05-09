@@ -360,4 +360,194 @@ select:disabled {
 /* 确保深色模式下按钮文本颜色正确 */
 [data-theme="dark"] .settings-button.secondary {
     color: var(--text-color);
+}
+
+/* 提示词卡片容器 */
+.prompt-cards-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* 提示词卡片 */
+.prompt-card {
+    display: flex;
+    align-items: center;
+    padding: 10px 15px;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.prompt-card:hover {
+    border-color: var(--accent-color);
+    background-color: var(--hover-bg);
+}
+
+.prompt-card.active {
+    border-color: var(--accent-color);
+    background-color: var(--active-card-bg);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.prompt-card-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 12px;
+    background-color: var(--icon-bg);
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+.prompt-icon {
+    width: 20px;
+    height: 20px;
+    filter: var(--icon-filter);
+}
+
+.prompt-card-content {
+    flex: 1;
+    overflow: hidden;
+}
+
+.prompt-card-name {
+    font-weight: 500;
+    margin-bottom: 3px;
+    color: var(--text-color);
+}
+
+.prompt-card-preview {
+    font-size: 12px;
+    color: var(--secondary-text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.prompt-card-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: 10px;
+}
+
+/* 提示词编辑器模态框 */
+.prompt-editor-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.prompt-editor-container {
+    width: 90%;
+    max-width: 500px;
+    background-color: var(--bg-color);
+    border-radius: 10px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+}
+
+.prompt-editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.prompt-editor-header h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--text-color);
+}
+
+.prompt-editor-content {
+    padding: 15px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.prompt-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 15px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* 提示词添加按钮 */
+.prompt-actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 15px;
+}
+
+#add-prompt-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#add-prompt-card img {
+    width: 16px;
+    height: 16px;
+}
+
+/* --icon-bg 和 --active-card-bg 变量 */
+:root {
+    --icon-bg: rgba(0, 0, 0, 0.05);
+    --active-card-bg: rgba(0, 0, 0, 0.03);
+    --accent-color: var(--primary-color);
+    --icon-filter: none;
+}
+
+[data-theme="dark"] {
+    --icon-bg: rgba(255, 255, 255, 0.1);
+    --active-card-bg: rgba(255, 255, 255, 0.05);
+    --icon-filter: invert(1);
+}
+
+.prompt-editor-header .close-editor-button {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.prompt-editor-header .close-editor-button img {
+    width: 16px;
+    height: 16px;
+    filter: var(--icon-filter);
+}
+
+#prompt-content {
+    width: 100%;
+    min-height: 120px;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--input-bg);
+    color: var(--text-color);
+    font-family: inherit;
+    resize: vertical;
 } 

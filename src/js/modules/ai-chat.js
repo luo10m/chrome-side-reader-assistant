@@ -1,5 +1,5 @@
 // Import the API service and markdown renderer
-import { sendMessageToOllama, getSettings } from '../services/ollama-service.js';
+import { sendMessageToOllama, getSettings, getActiveSystemPrompt } from '../services/ollama-service.js';
 import { sendMessageToOpenAI, parseOpenAIStreamingResponse } from '../services/openai-service.js';
 import { renderMarkdown } from '../utils/markdown-renderer.js';
 import { t } from '../utils/i18n.js';
@@ -436,188 +436,126 @@ export function loadAIChat(container) {
         return contentElement;
     }
 
-    // 新增：发送消息函数
+    // 修改发送消息函数，使用getActiveSystemPrompt
     async function sendMessage() {
-        const message = chatInput.value.trim();
-
-        if (!message) return;
-
-        // 如果 AI 正在生成回复，不允许发送新消息
-        if (isGenerating) {
-            console.log('AI is still generating a response, please wait');
+        if (!chatInput.value.trim() || isGenerating) {
             return;
         }
-
-        // 删除欢迎消息（如果存在）
-        const welcomeMessage = document.querySelector('.welcome-message');
-        if (welcomeMessage) {
-            welcomeMessage.remove();
-        }
-
-        // 清空输入框
-        chatInput.value = '';
-
-        // 重置输入框高度
-        chatInput.style.height = 'auto';
-
-        // 添加用户消息到UI
-        addMessageToUI('user', message);
-
-        // 添加用户消息到聊天历史
-        chatHistory.push({
-            role: 'user',
-            content: message,
-            timestamp: Date.now()
-        });
-
-        // 保存更新后的消息历史
-        saveChatHistory(chatHistory);
-
-        // 创建助手消息元素
-        const assistantMessageElement = document.createElement('div');
-        assistantMessageElement.className = 'message assistant';
-
-        const contentElement = document.createElement('div');
-        contentElement.className = 'message-content';
-
-        // 添加加载指示器
-        const loadingIndicator = document.createElement('div');
-        loadingIndicator.className = 'loading-indicator';
-        loadingIndicator.innerHTML = '<div></div><div></div><div></div>';
-
-        contentElement.appendChild(loadingIndicator);
-        assistantMessageElement.appendChild(contentElement);
-
-        chatMessages.appendChild(assistantMessageElement);
-
-        // 滚动到底部
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-
-        // 设置流式消息元素
-        streamingMessageElement = contentElement;
-
-        // 设置生成状态
+        
+        // 禁用发送按钮和输入
         isGenerating = true;
-
+        sendButton.disabled = true;
+        
+        // 获取输入内容并清空输入框
+        const userMessage = chatInput.value.trim();
+        chatInput.value = '';
+        adjustTextareaHeight();
+        
+        // 添加用户消息到 UI
+        addMessageToUI('user', userMessage);
+        
         try {
+            // 获取当前活动的系统提示词
+            const systemPrompt = await getActiveSystemPrompt();
+            
             // 获取设置
             const settings = await getSettings();
-
-            // 准备发送给API的聊天历史 - 只保留必要字段，移除自定义属性
-            const apiChatHistory = chatHistory.map(msg => ({
-                role: msg.role,
-                content: msg.content
-            }));
-
-            console.log('准备发送给API的消息历史:', apiChatHistory);
-
-            // 根据默认AI提供商选择API
-            if (settings.defaultAI === 'openai') {
-                // 使用OpenAI API，传递过滤后的历史记录
-                const response = await sendMessageToOpenAI(message, apiChatHistory, settings.systemPrompt);
-
-                // 移除加载指示器
-                loadingIndicator.remove();
-
-                // 处理流式响应
-                if (response.streaming) {
-                    // 初始化响应内容
-                    let fullText = '';
-
-                    // 读取流
-                    const reader = response.reader;
-                    const decoder = response.decoder;
-
-                    // 处理流式响应
-                    let done = false;
-                    while (!done) {
-                        const { value, done: readerDone } = await reader.read();
-                        done = readerDone;
-
-                        if (done) break;
-
-                        // 解码数据块
-                        const chunk = decoder.decode(value, { stream: true });
-
-                        // 处理数据块
-                        const lines = chunk.split('\n');
-                        for (const line of lines) {
-                            if (line.trim() === '') continue;
-
-                            // 解析OpenAI流式响应
-                            const content = parseOpenAIStreamingResponse(line);
-                            if (content) {
-                                fullText += content;
-
-                                // 修复：使用包装容器解决流式内容分词换行问题
-                                const wrappedHtml = `<div class="streaming-content" style="white-space: normal; word-break: normal; word-wrap: normal; overflow-wrap: break-word;">${renderMarkdown(fullText)}</div>`;
-                                contentElement.innerHTML = wrappedHtml;
-
-                                // 滚动到底部
-                                chatMessages.scrollTop = chatMessages.scrollHeight;
-                            }
-                        }
-                    }
-
-                    // 添加助手消息到聊天历史
-                    chatHistory.push({
-                        role: 'assistant',
-                        content: fullText,
-                        timestamp: Date.now()
-                    });
-
-                    // 保存更新后的消息历史
-                    saveChatHistory(chatHistory);
-                } else {
-                    // 处理非流式响应
-                    contentElement.innerHTML = renderMarkdown(response.fullResponse);
-
-                    // 添加助手消息到聊天历史
-                    chatHistory.push({
-                        role: 'assistant',
-                        content: response.fullResponse,
-                        timestamp: Date.now()
-                    });
-
-                    // 保存更新后的消息历史
-                    saveChatHistory(chatHistory);
+            const provider = settings.defaultAI || 'ollama';
+            
+            // 创建消息历史数组
+            let allMessages = [
+                { role: "system", content: systemPrompt },
+                ...chatHistory.map(msg => {
+                    return { role: msg.role, content: msg.content };
+                }),
+                { role: "user", content: userMessage }
+            ];
+            
+            // 创建流式显示的消息元素
+            streamingMessageElement = document.createElement('div');
+            streamingMessageElement.className = 'message assistant';
+            const contentElement = document.createElement('div');
+            contentElement.className = 'message-content';
+            streamingMessageElement.appendChild(contentElement);
+            chatMessages.appendChild(streamingMessageElement);
+            
+            // 显示加载指示器
+            contentElement.innerHTML = '<div class="loading-indicator">思考中...</div>';
+            
+            // 滚动到底部
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            // 根据提供商发送消息
+            let response;
+            if (provider === 'openai') {
+                // 检查是否有API密钥
+                if (!settings.openaiApiKey) {
+                    contentElement.innerHTML = '请在设置中配置OpenAI API密钥';
+                    setTimeout(() => {
+                        openSettings();
+                    }, 1000);
+                    return;
                 }
+                
+                // 使用OpenAI
+                response = await sendMessageToOpenAI(userMessage, allMessages.slice(0, -1), updateStreamingMessage);
             } else {
-                // 使用Ollama API，传递过滤后的历史记录
-                const response = await sendMessageToOllama(message, apiChatHistory);
-
-                // 移除加载指示器
-                loadingIndicator.remove();
-
-                // 更新内容 - 修复：从response.content中获取内容
-                const content = response.content || response;
-                contentElement.innerHTML = renderMarkdown(content);
-
-                // 添加助手消息到聊天历史
-                chatHistory.push({
-                    role: 'assistant',
-                    content: content,
-                    timestamp: Date.now()
-                });
-
-                // 保存更新后的消息历史
+                // 使用Ollama
+                response = await sendMessageToOllama(userMessage, allMessages.slice(0, -1), updateStreamingMessage);
+            }
+            
+            // 添加流式响应
+            if (response) {
+                updateStreamingMessage('', response.content, true);
+                chatHistory.push({ role: 'user', content: userMessage });
+                chatHistory.push({ role: 'assistant', content: response.content });
+                
+                // 保存聊天历史到本地存储
                 saveChatHistory(chatHistory);
             }
+        } catch (error) {
+            console.error('发送消息错误:', error);
+            
+            // 显示错误消息
+            if (streamingMessageElement) {
+                const contentElement = streamingMessageElement.querySelector('.message-content');
+                if (contentElement) {
+                    contentElement.innerHTML = `<div class="error-message">错误: ${error.message}</div>`;
+                }
+            }
+        } finally {
+            // 重置状态
+            isGenerating = false;
+            sendButton.disabled = false;
+            streamingMessageElement = null;
+        }
+    }
 
-            // 添加复制按钮
+    // 更新流式消息
+    function updateStreamingMessage(chunk, fullText, done = false) {
+        if (!streamingMessageElement) return;
+
+        const contentElement = streamingMessageElement.querySelector('.message-content');
+        if (!contentElement) return;
+
+        if (done) {
+            // 完成响应，添加复制按钮
+            contentElement.innerHTML = renderMarkdown(fullText);
+
+            // 添加操作按钮
             const actionsElement = document.createElement('div');
             actionsElement.className = 'message-actions';
             actionsElement.innerHTML = `
-                <button class="action-button action-copy-button" title="${t('chat.copy')}">
+                <button class="action-copy-button" title="${t('chat.copy')}">
                     <img src="assets/svg/copy.svg" alt="Copy" class="button-icon">
                 </button>
             `;
-            assistantMessageElement.appendChild(actionsElement);
+            streamingMessageElement.appendChild(actionsElement);
 
             // 添加复制功能
             const copyButton = actionsElement.querySelector('.action-copy-button');
             copyButton.addEventListener('click', () => {
-                copyToClipboard(contentElement.textContent);
+                copyToClipboard(fullText);
             });
 
             // 应用代码高亮
@@ -630,16 +568,19 @@ export function loadAIChat(container) {
                     console.debug('Error during code highlighting:', e);
                 }
             }
-        } catch (error) {
-            console.error('Error sending message:', error);
-
-            // 显示错误消息
-            contentElement.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
-        } finally {
-            // 重置生成状态
-            isGenerating = false;
-            streamingMessageElement = null;
+        } else {
+            // 更新流式内容
+            if (contentElement.querySelector('.loading-indicator')) {
+                contentElement.innerHTML = '';
+            }
+            
+            // 包装内容以确保正确的换行
+            const wrappedHtml = `<div class="streaming-content" style="white-space: normal; word-break: normal; word-wrap: normal; overflow-wrap: break-word;">${renderMarkdown(fullText)}</div>`;
+            contentElement.innerHTML = wrappedHtml;
         }
+
+        // 滚动到底部
+        chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
     // 修复：加载当前标签页的聊天历史 - 正确处理复杂的消息对象

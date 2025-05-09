@@ -274,3 +274,9 @@ function setActiveTab(tab) {
 - Settings 面板→ loadSettings(container)（src/js/modules/settings.js）
 
 它们都是在 `init()` 中预先调用一次，真正的渲染与逻辑由各自模块内部的入口函数负责。
+
+
+
+png 资源放在 assets/
+
+svg 资源放在 src/assets/svg/

@@ -10,6 +10,25 @@ export async function loadSettings(container) {
     const languageOptions = await generateLanguageOptions();
     
     // Create settings UI with tabs
+    const systemPromptTabHtml = `
+    <div class="tab-content" id="system-prompt-tab">
+        <div class="settings-section">
+            <h3 data-i18n="settings.sections.systemPrompt.title">系统提示词</h3>
+            
+            <div class="prompt-cards-container">
+                <!-- 卡片列表将动态生成 -->
+            </div>
+            
+            <div class="prompt-actions">
+                <button id="add-prompt-card" class="settings-button">
+                    <img src="assets/svg/plus.svg" alt="Add" class="button-icon">
+                    <span data-i18n="settings.sections.systemPrompt.addNew">添加新提示词</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    `;
+
     container.innerHTML = `
         <div class="settings-container">
             <div class="settings-header">
@@ -165,19 +184,7 @@ export async function loadSettings(container) {
                     </div>
                 </div>
                 
-                <!-- System Prompt Tab -->
-                <div class="tab-content" id="system-prompt-tab">
-                    <div class="settings-section">
-                        <h3 data-i18n="settings.sections.systemPrompt.title">System Prompt</h3>
-                        <div class="settings-item">
-                            <label for="system-prompt" data-i18n="settings.sections.systemPrompt.label">System Prompt</label>
-                            <textarea id="system-prompt" rows="8" placeholder="Enter system prompt here..." data-i18n-placeholder="settings.sections.systemPrompt.placeholder"></textarea>
-                            <p class="settings-help" data-i18n="settings.sections.systemPrompt.help">
-                                The system prompt is sent to the AI at the beginning of each conversation to set the context and behavior.
-                            </p>
-                        </div>
-                    </div>
-                </div>
+                ${systemPromptTabHtml}
             </div>
         </div>
         
@@ -266,8 +273,8 @@ export async function loadSettings(container) {
         // Load model list
         fetchModelList(fullUrl, useProxyCheckbox.checked, settings.ollamaModel);
         
-        // Set system prompt
-        systemPromptTextarea.value = settings.systemPrompt || '';
+        // 初始化系统提示词卡片功能
+        initSystemPrompts(settings);
         
         // Set default AI
         document.getElementById('default-ai-select').value = settings.defaultAI || 'ollama';
@@ -733,6 +740,294 @@ export async function loadSettings(container) {
             openaiConnectionStatus.innerHTML = `<span class="error">${t('settings.status.error').replace('{error}', error.message)}</span>`;
         }
     });
+
+    // 初始化系统提示词功能
+    function initSystemPrompts(settings) {
+        // 确保系统提示词数组存在
+        if (!settings.systemPrompts || !Array.isArray(settings.systemPrompts) || settings.systemPrompts.length === 0) {
+            // 如果不存在，创建默认提示词
+            settings.systemPrompts = [
+                {
+                    id: 'default',
+                    name: t('settings.sections.systemPrompt.defaultPrompt', 'Default Prompt'),
+                    content: settings.systemPrompt || '',
+                    isDefault: true,
+                    isActive: true,
+                    icon: 'assistant'
+                }
+            ];
+            settings.activePromptId = 'default';
+            
+            // 保存设置
+            updateSettings(settings);
+        }
+        
+        // 获取DOM元素
+        const promptCardsContainer = document.querySelector('.prompt-cards-container');
+        const addPromptCardButton = document.getElementById('add-prompt-card');
+        
+        // 渲染提示词卡片
+        renderPromptCards(settings.systemPrompts, settings.activePromptId);
+        
+        // 绑定添加按钮事件
+        addPromptCardButton.addEventListener('click', () => {
+            openPromptEditor(null);
+        });
+    }
+    
+    // 渲染提示词卡片
+    function renderPromptCards(systemPrompts, activePromptId) {
+        // 获取DOM元素
+        const promptCardsContainer = document.querySelector('.prompt-cards-container');
+        if (!promptCardsContainer) return;
+        
+        // 清空容器
+        promptCardsContainer.innerHTML = '';
+        
+        // 渲染每个卡片
+        systemPrompts.forEach(prompt => {
+            const card = createPromptCard(prompt, activePromptId === prompt.id);
+            promptCardsContainer.appendChild(card);
+        });
+    }
+    
+    // 创建提示词卡片
+    function createPromptCard(prompt, isActive) {
+        const card = document.createElement('div');
+        card.className = `prompt-card ${isActive ? 'active' : ''}`;
+        card.dataset.id = prompt.id;
+        
+        // 卡片内容
+        card.innerHTML = `
+            <div class="prompt-card-icon">
+                <img src="assets/svg/${prompt.icon || 'assistant'}.svg" alt="${prompt.name}" class="prompt-icon">
+            </div>
+            <div class="prompt-card-content">
+                <div class="prompt-card-name">${prompt.name}</div>
+                <div class="prompt-card-preview">${truncateText(prompt.content, 60)}</div>
+            </div>
+            <div class="prompt-card-actions">
+                <button class="edit-prompt-button icon-button" data-i18n-title="settings.sections.systemPrompt.edit">
+                    <img src="assets/svg/edit.svg" alt="Edit" class="button-icon">
+                </button>
+                ${prompt.isDefault ? '' : `
+                <button class="delete-prompt-button icon-button" data-i18n-title="settings.sections.systemPrompt.delete">
+                    <img src="assets/svg/delete.svg" alt="Delete" class="button-icon">
+                </button>
+                `}
+            </div>
+        `;
+        
+        // 绑定点击事件 - 选择此卡片
+        card.addEventListener('click', (e) => {
+            // 如果点击的是按钮，则不触发卡片选择
+            if (e.target.closest('.edit-prompt-button') || e.target.closest('.delete-prompt-button')) {
+                return;
+            }
+            
+            // 移除所有卡片的active类
+            document.querySelectorAll('.prompt-card').forEach(c => c.classList.remove('active'));
+            
+            // 添加active类到当前卡片
+            card.classList.add('active');
+            
+            // 更新活动提示词ID
+            updateActivePrompt(prompt.id);
+        });
+        
+        // 绑定编辑按钮事件
+        const editButton = card.querySelector('.edit-prompt-button');
+        editButton.addEventListener('click', () => {
+            openPromptEditor(prompt);
+        });
+        
+        // 绑定删除按钮事件（如果不是默认卡片）
+        if (!prompt.isDefault) {
+            const deleteButton = card.querySelector('.delete-prompt-button');
+            deleteButton.addEventListener('click', () => {
+                confirmDeletePrompt(prompt.id);
+            });
+        }
+        
+        return card;
+    }
+    
+    // 截断文本
+    function truncateText(text, maxLength) {
+        if (!text) return '';
+        if (text.length <= maxLength) return text;
+        return text.substring(0, maxLength) + '...';
+    }
+    
+    // 更新活动提示词
+    async function updateActivePrompt(promptId) {
+        const settings = await getSettings();
+        
+        // 更新当前活动提示词ID
+        settings.activePromptId = promptId;
+        
+        // 更新当前系统提示词内容（用于兼容旧版本）
+        const activePrompt = settings.systemPrompts.find(p => p.id === promptId);
+        if (activePrompt) {
+            settings.systemPrompt = activePrompt.content;
+        }
+        
+        // 保存设置
+        await updateSettings(settings);
+    }
+    
+    // 打开提示词编辑器
+    function openPromptEditor(prompt) {
+        // 创建模态对话框
+        const modal = document.createElement('div');
+        modal.className = 'prompt-editor-modal';
+        modal.innerHTML = `
+            <div class="prompt-editor-container">
+                <div class="prompt-editor-header">
+                    <h3 data-i18n="settings.sections.systemPrompt.editor.title">
+                        ${prompt ? t('settings.sections.systemPrompt.editor.edit', 'Edit Prompt') : t('settings.sections.systemPrompt.editor.new', 'New Prompt')}
+                    </h3>
+                    <button class="close-editor-button">
+                        <img src="assets/svg/close.svg" alt="Close" class="button-icon">
+                    </button>
+                </div>
+                <div class="prompt-editor-content">
+                    <div class="settings-item">
+                        <label for="prompt-name" data-i18n="settings.sections.systemPrompt.editor.name">名称</label>
+                        <input type="text" id="prompt-name" value="${prompt ? prompt.name : ''}" placeholder="${t('settings.sections.systemPrompt.editor.namePlaceholder', 'Enter prompt name')}">
+                    </div>
+                    <div class="settings-item">
+                        <label for="prompt-icon" data-i18n="settings.sections.systemPrompt.editor.icon">图标</label>
+                        <select id="prompt-icon">
+                            <option value="assistant" ${prompt && prompt.icon === 'assistant' ? 'selected' : ''}>
+                                ${t('settings.sections.systemPrompt.icons.assistant', 'Assistant')}
+                            </option>
+                            <option value="code" ${prompt && prompt.icon === 'code' ? 'selected' : ''}>
+                                ${t('settings.sections.systemPrompt.icons.code', 'Code')}
+                            </option>
+                            <option value="creative" ${prompt && prompt.icon === 'creative' ? 'selected' : ''}>
+                                ${t('settings.sections.systemPrompt.icons.creative', 'Creative')}
+                            </option>
+                            <option value="teacher" ${prompt && prompt.icon === 'teacher' ? 'selected' : ''}>
+                                ${t('settings.sections.systemPrompt.icons.teacher', 'Teacher')}
+                            </option>
+                        </select>
+                    </div>
+                    <div class="settings-item">
+                        <label for="prompt-content" data-i18n="settings.sections.systemPrompt.editor.content">提示词内容</label>
+                        <textarea id="prompt-content" rows="8" placeholder="${t('settings.sections.systemPrompt.editor.contentPlaceholder', 'Enter system prompt content')}">${prompt ? prompt.content : ''}</textarea>
+                    </div>
+                </div>
+                <div class="prompt-editor-actions">
+                    <button class="settings-button secondary cancel-button" data-i18n="settings.buttons.cancel">取消</button>
+                    <button class="settings-button primary save-button" data-i18n="settings.buttons.save">保存</button>
+                </div>
+            </div>
+        `;
+        
+        // 添加到 DOM
+        document.body.appendChild(modal);
+        
+        // 绑定关闭按钮
+        const closeButton = modal.querySelector('.close-editor-button');
+        closeButton.addEventListener('click', () => {
+            modal.remove();
+        });
+        
+        // 绑定取消按钮
+        const cancelButton = modal.querySelector('.cancel-button');
+        cancelButton.addEventListener('click', () => {
+            modal.remove();
+        });
+        
+        // 绑定保存按钮
+        const saveButton = modal.querySelector('.save-button');
+        saveButton.addEventListener('click', async () => {
+            const name = document.getElementById('prompt-name').value.trim();
+            const icon = document.getElementById('prompt-icon').value;
+            const content = document.getElementById('prompt-content').value.trim();
+            
+            // 验证输入
+            if (!name || !content) {
+                alert(t('settings.sections.systemPrompt.editor.validation', 'Name and content are required'));
+                return;
+            }
+            
+            // 获取当前设置
+            const settings = await getSettings();
+            
+            if (prompt) {
+                // 编辑现有提示词
+                const index = settings.systemPrompts.findIndex(p => p.id === prompt.id);
+                if (index !== -1) {
+                    settings.systemPrompts[index].name = name;
+                    settings.systemPrompts[index].icon = icon;
+                    settings.systemPrompts[index].content = content;
+                    
+                    // 如果编辑的是当前活动的提示词，更新系统提示词
+                    if (settings.activePromptId === prompt.id) {
+                        settings.systemPrompt = content;
+                    }
+                }
+            } else {
+                // 创建新提示词
+                const newPrompt = {
+                    id: `prompt_${Date.now()}`,
+                    name,
+                    icon,
+                    content,
+                    isDefault: false,
+                    isActive: false
+                };
+                
+                settings.systemPrompts.push(newPrompt);
+            }
+            
+            // 保存设置
+            await updateSettings(settings);
+            
+            // 重新渲染卡片
+            renderPromptCards(settings.systemPrompts, settings.activePromptId);
+            
+            // 关闭编辑器
+            modal.remove();
+        });
+    }
+    
+    // 确认删除提示词
+    function confirmDeletePrompt(promptId) {
+        if (confirm(t('settings.sections.systemPrompt.confirmDelete', 'Are you sure you want to delete this prompt?'))) {
+            deletePrompt(promptId);
+        }
+    }
+    
+    // 删除提示词
+    async function deletePrompt(promptId) {
+        const settings = await getSettings();
+        
+        // 找到要删除的提示词索引
+        const index = settings.systemPrompts.findIndex(p => p.id === promptId);
+        
+        if (index !== -1) {
+            // 如果要删除的是当前活动的提示词，则切换到默认提示词
+            if (settings.activePromptId === promptId) {
+                const defaultPrompt = settings.systemPrompts.find(p => p.isDefault);
+                if (defaultPrompt) {
+                    settings.activePromptId = defaultPrompt.id;
+                    settings.systemPrompt = defaultPrompt.content;
+                }
+            }
+            
+            // 删除提示词
+            settings.systemPrompts.splice(index, 1);
+            
+            // 保存设置
+            await updateSettings(settings);
+            
+            // 重新渲染卡片
+            renderPromptCards(settings.systemPrompts, settings.activePromptId);
+        }
+    }
 }
 
 // Update code highlight theme

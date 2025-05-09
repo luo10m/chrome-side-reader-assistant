@@ -69,7 +69,29 @@
         "title": "System Prompt",
         "label": "System Prompt",
         "placeholder": "Enter system prompt here...",
-        "help": "The system prompt is sent to the AI at the beginning of each conversation to set the context and behavior."
+        "help": "The system prompt is sent to the AI at the beginning of each conversation to set the context and behavior.",
+        "addNew": "Add New Prompt",
+        "edit": "Edit",
+        "delete": "Delete",
+        "confirmDelete": "Are you sure you want to delete this prompt?",
+        "defaultPrompt": "Default Prompt",
+        "editor": {
+          "title": "Prompt Editor",
+          "edit": "Edit Prompt",
+          "new": "New Prompt",
+          "name": "Name",
+          "namePlaceholder": "Enter prompt name",
+          "icon": "Icon",
+          "content": "Prompt Content",
+          "contentPlaceholder": "Enter the system prompt content...",
+          "validation": "Name and content are required"
+        },
+        "icons": {
+          "assistant": "Assistant",
+          "code": "Code",
+          "creative": "Creative",
+          "teacher": "Teacher"
+        }
       },
       "defaultAI": {
         "title": "AI Settings",
@@ -107,7 +129,8 @@
       "save": "Save Settings",
       "testConnection": "Test Connection",
       "testApi": "Test API",
-      "refresh": "Refresh"
+      "refresh": "Refresh",
+      "cancel": "Cancel"
     },
     "status": {
       "testing": "Testing connection...",

@@ -100,4 +100,38 @@ export async function updateSettings(settings) {
             }
         });
     });
+}
+
+// 获取当前活动的系统提示词
+export async function getActiveSystemPrompt() {
+    const settings = await getSettings();
+    return settings.systemPrompt || '';
+}
+
+// 获取所有系统提示词
+export async function getAllSystemPrompts() {
+    const settings = await getSettings();
+    return settings.systemPrompts || [];
+}
+
+// 获取指定ID的系统提示词
+export async function getSystemPromptById(promptId) {
+    const settings = await getSettings();
+    const prompt = settings.systemPrompts?.find(p => p.id === promptId);
+    return prompt ? prompt.content : '';
+}
+
+// 设置活动系统提示词
+export async function setActiveSystemPrompt(promptId) {
+    const settings = await getSettings();
+    const prompt = settings.systemPrompts?.find(p => p.id === promptId);
+    
+    if (prompt) {
+        settings.activePromptId = promptId;
+        settings.systemPrompt = prompt.content;
+        await updateSettings(settings);
+        return true;
+    }
+    
+    return false;
 } 

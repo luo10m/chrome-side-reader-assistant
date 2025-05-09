@@ -69,7 +69,29 @@
         "title": "系统提示",
         "label": "系统提示",
         "placeholder": "在此输入系统提示...",
-        "help": "系统提示在每次对话开始时发送给 AI 以设置上下文和行为。"
+        "help": "系统提示在每次对话开始时发送给 AI 以设置上下文和行为。",
+        "addNew": "添加新提示词",
+        "edit": "编辑",
+        "delete": "删除",
+        "confirmDelete": "确定要删除这个提示词吗？",
+        "defaultPrompt": "默认提示词",
+        "editor": {
+          "title": "提示词编辑器",
+          "edit": "编辑提示词",
+          "new": "新建提示词",
+          "name": "名称",
+          "namePlaceholder": "输入提示词名称",
+          "icon": "图标",
+          "content": "提示词内容",
+          "contentPlaceholder": "输入系统提示词内容...",
+          "validation": "名称和内容不能为空"
+        },
+        "icons": {
+          "assistant": "助手",
+          "code": "代码",
+          "creative": "创意",
+          "teacher": "教师"
+        }
       },
       "defaultAI": {
         "title": "AI 设置",
@@ -107,7 +129,8 @@
       "save": "保存设置",
       "testConnection": "测试连接",
       "testApi": "测试 API",
-      "refresh": "刷新"
+      "refresh": "刷新",
+      "cancel": "取消"
     },
     "status": {
       "testing": "测试连接中...",
