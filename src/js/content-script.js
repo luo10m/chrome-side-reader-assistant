@@ -94,7 +94,7 @@ function isExtensionContextValid() {
 // 改进的内容提取函数
 function extractPageText() {
     try {
-        console.log('使用Readability提取内容');
+        console.log('开始提取页面内容');
         
         // 获取页面基本信息
         const url = window.location.href;
@@ -102,6 +102,40 @@ function extractPageText() {
         
         // 更新当前URL
         currentPageUrl = url;
+        
+        // 双轨并行设计: 尝试使用UGC提取器进行结构化提取
+        console.log('尝试使用UGC提取器进行结构化提取...');
+        const structuredData = extractStructuredData();
+        
+        // 如果结构化提取成功
+        if (structuredData) {
+            console.log('结构化提取成功，发送数据到后台');
+            
+            // 发送结构化内容到后台
+            try {
+                if (isExtensionContextValid()) {
+                    chrome.runtime.sendMessage({
+                        action: 'pageStructured',
+                        url: url,
+                        structuredData: structuredData,
+                        timestamp: Date.now()
+                    }, response => {
+                        if (response && response.success) {
+                            console.log('结构化数据已成功发送到后台');
+                        } else {
+                            console.warn('发送结构化数据时收到异常响应:', response);
+                        }
+                    });
+                }
+            } catch (chromeError) {
+                console.error('发送结构化消息时出错:', chromeError);
+            }
+        } else {
+            console.log('结构化提取失败或不适用，将使用Readability提取');
+        }
+        
+        // 继续使用Readability提取（保持原有流程不变）
+        console.log('使用Readability提取内容');
         
         // 尝试使用Readability提取
         const readabilityResult = extractPageWithReadability();
@@ -247,7 +281,10 @@ function checkUrlChange() {
                 }
             });
         } catch (e) {
-            console.error('发送页面内容消息时出错:', e);
+            setTimeout(() => {
+                extractPageText();
+                setupPageMonitors();
+            }, 1000);
         }
     }
 }
@@ -277,6 +314,99 @@ function attemptExtraction(maxAttempts = 3, delay = 2000) {
     
     // 开始第一次尝试
     tryExtract();
+}
+
+/**
+ * 尝试提取结构化数据
+ * @returns {Object|null} 结构化数据对象或null
+ */
+function extractStructuredData() {
+    try {
+        // 检查 site-adapters 是否可用
+        if (!window.siteAdapters) {
+            console.log('site-adapters 模块未加载');
+            return null;
+        }
+        
+        // 使用 site-adapters 提取结构化数据
+        const structuredData = window.siteAdapters.extractStructuredData();
+        
+        if (structuredData) {
+            console.log('成功提取结构化数据:', structuredData);
+            return structuredData;
+        } else {
+            console.log('无法提取结构化数据，可能没有适配器或页面结构不匹配');
+            return null;
+        }
+    } catch (error) {
+        console.error('提取结构化数据失败:', error);
+        return null;
+    }
+}
+
+/**
+ * 设置页面监听器，检测页面变化并触发提取
+ */
+function setupPageMonitors() {
+    console.log('设置页面监听器');
+    
+    // 设置 History API 监听
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    
+    // 重写 pushState
+    history.pushState = function() {
+        const result = originalPushState.apply(this, arguments);
+        console.log('检测到 pushState 调用，重新提取页面');
+        setTimeout(extractPageText, 1000); // 给页面一点时间加载
+        return result;
+    };
+    
+    // 重写 replaceState
+    history.replaceState = function() {
+        const result = originalReplaceState.apply(this, arguments);
+        console.log('检测到 replaceState 调用，重新提取页面');
+        setTimeout(extractPageText, 1000);
+        return result;
+    };
+    
+    // 监听 popstate 事件
+    const popstateHandler = () => {
+        console.log('检测到 popstate 事件，重新提取页面');
+        setTimeout(extractPageText, 1000);
+    };
+    window.addEventListener('popstate', popstateHandler);
+    
+    // 设置 DOM 变化监听
+    let mutationTimer = null;
+    const observer = new MutationObserver(() => {
+        // 节流处理
+        if (mutationTimer) {
+            clearTimeout(mutationTimer);
+        }
+        
+        mutationTimer = setTimeout(() => {
+            console.log('检测到 DOM 变化，重新提取页面');
+            extractPageText();
+        }, 1000); // 1秒节流
+    });
+    
+    // 开始监听
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+    
+    // 在页面卸载时清理
+    window.addEventListener('unload', () => {
+        history.pushState = originalPushState;
+        history.replaceState = originalReplaceState;
+        window.removeEventListener('popstate', popstateHandler);
+        observer.disconnect();
+        if (mutationTimer) {
+            clearTimeout(mutationTimer);
+        }
+    });
 }
 
 // 页面加载完成后执行内容提取

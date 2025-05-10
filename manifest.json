@@ -53,6 +53,7 @@
       "js": [
         "lib/JSDOMParser.js",
         "lib/Readability.js",
+        "src/js/site-adapters.js",
         "src/js/content-script.js",
         "src/js/content/extractor.js"
       ],

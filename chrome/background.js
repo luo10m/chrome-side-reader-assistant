@@ -38,13 +38,16 @@ const defaultSettings = {
 const MAX_PAGE_CACHE = 10;
 let pageCache = {};
 
+// 新增：结构化页面内容缓存
+let structuredPageCache = {};
+
 // current settings
 let currentSettings = { ...defaultSettings };
 
 // load settings
 function loadSettings() {
     return new Promise((resolve) => {
-        chrome.storage.local.get(['settings', 'pageCache'], (result) => {
+        chrome.storage.local.get(['settings', 'pageCache', 'structuredPageCache'], (result) => {
             if (result.settings) {
                 // merge default settings and stored settings
                 currentSettings = { ...defaultSettings, ...result.settings };
@@ -53,6 +56,11 @@ function loadSettings() {
             // 加载页面缓存
             if (result.pageCache) {
                 pageCache = result.pageCache;
+            }
+            
+            // 加载结构化页面缓存
+            if (result.structuredPageCache) {
+                structuredPageCache = result.structuredPageCache;
             }
 
             resolve(currentSettings);
@@ -351,8 +359,30 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 
 // 监听消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // 处理结构化页面内容消息
+    if (request.action === 'pageStructured') {
+        const tabId = sender.tab ? sender.tab.id : null;
+        if (tabId) {
+            console.log('收到结构化页面内容:', request.url, request.structuredData);
+            
+            // 更新结构化页面缓存
+            structuredPageCache[tabId] = {
+                url: request.url,
+                structuredData: request.structuredData,
+                timestamp: request.timestamp || Date.now()
+            };
+            
+            // 保存到storage
+            chrome.storage.local.set({ structuredPageCache });
+            
+            // 发送响应
+            if (sendResponse) {
+                sendResponse({ success: true });
+            }
+        }
+    }
     // 处理页面内容消息
-    if (request.action === 'pageContent') {
+    else if (request.action === 'pageContent') {
         const tabId = sender.tab ? sender.tab.id : null;
         if (tabId) {
             // 确保有页面内容
