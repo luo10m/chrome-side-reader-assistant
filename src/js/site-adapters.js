@@ -429,10 +429,27 @@ const zhihuSelectors = {
 };
 
 // Map of hostname patterns to selectors
+const xSelectors = {
+  title: 'article h2',
+  author: '.UserName, .DisplayName',
+  authorAvatar: 'img.ProfileAvatar-image',
+  content: 'article div[lang]',
+  media: 'article img, article video',
+  publishDate: 'time[datetime]',
+  likeCount: '[data-testid="like"]',
+  commentCount: '[data-testid="reply"]',
+  comments: '.tweet-text',
+  commentAuthor: '.username',
+  commentContent: '.tweet-text',
+  commentDate: 'time[datetime]',
+  commentLikes: '[data-testid="like"]'
+};
+
 const siteAdapters = {
   'xiaohongshu.com': xiaohongshuSelectors,
   'xhslink.com': xhslinkSelectors, // Short links for Xiaohongshu
-  'zhihu.com': zhihuSelectors
+  'zhihu.com': zhihuSelectors,
+  'x.com': xSelectors
 };
 
 /**
