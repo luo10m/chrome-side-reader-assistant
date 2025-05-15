@@ -697,29 +697,63 @@ export async function loadSettings(container) {
             // 导入 getOpenAIModels 函数
             const { getOpenAIModels } = await import('../services/openai-service.js');
 
-            // 获取模型列表
-            const models = await getOpenAIModels(apiKey, baseUrl);
+            // 设置超时处理
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
 
-            // 清空现有选项
-            openaiModelSelect.innerHTML = `<option value="" data-i18n="settings.sections.openai.model.placeholder">Select a model</option>`;
+            try {
+                // 获取模型列表
+                const models = await getOpenAIModels(apiKey, baseUrl);
+                clearTimeout(timeoutId);
 
-            // 添加模型选项
-            models.forEach(model => {
-                const option = document.createElement('option');
-                option.value = model.id;
-                option.textContent = model.name;
+                // 清空现有选项
+                openaiModelSelect.innerHTML = `<option value="" data-i18n="settings.sections.openai.model.placeholder">Select a model</option>`;
 
-                if (settings.openaiModel === model.id) {
-                    option.selected = true;
-                }
+                // 添加模型选项
+                models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.id;
+                    option.textContent = model.name;
 
-                openaiModelSelect.appendChild(option);
-            });
+                    if (settings.openaiModel === model.id) {
+                        option.selected = true;
+                    }
 
-            openaiConnectionStatus.innerHTML = '';
+                    openaiModelSelect.appendChild(option);
+                });
+
+                openaiConnectionStatus.innerHTML = '';
+            } catch (fetchError) {
+                clearTimeout(timeoutId);
+                throw fetchError; // 重新抛出错误，由外层 catch 处理
+            }
         } catch (error) {
             console.error('Error fetching OpenAI models:', error);
-            openaiConnectionStatus.innerHTML = `<span class="error">${t('settings.sections.openai.model.error')}: ${error.message}</span>`;
+
+            // 提供默认模型选项，即使获取失败
+            openaiModelSelect.innerHTML = `<option value="" data-i18n="settings.sections.openai.model.placeholder">Select a model</option>
+                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="custom">Custom Model</option>`;
+
+            // 如果有已选模型，尝试选中
+            if (settings.openaiModel) {
+                const option = openaiModelSelect.querySelector(`option[value="${settings.openaiModel}"]`);
+                if (option) {
+                    option.selected = true;
+                }
+            }
+
+            // 显示错误信息，但不影响使用
+            let errorMessage = error.message || 'Unknown error';
+            if (error instanceof DOMException) {
+                if (error.name === 'AbortError') {
+                    errorMessage = '请求超时，已加载默认模型';
+                } else {
+                    errorMessage = `${error.name}: 已加载默认模型`;
+                }
+            }
+            openaiConnectionStatus.innerHTML = `<span class="warning">${t('settings.sections.openai.model.warning')}: ${errorMessage}</span>`;
         }
     });
 
