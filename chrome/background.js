@@ -6,6 +6,38 @@ chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch((error) => console.error(error));
 
+// 聊天历史存储相关函数
+// 保存聊天历史
+function saveChatHistory(tabId, messages) {
+    chrome.storage.local.set({ ['pageMessages_' + tabId]: messages });
+}
+
+// 读取聊天历史
+function loadChatHistory(tabId) {
+    return new Promise(resolve => {
+        chrome.storage.local.get(['pageMessages_' + tabId], result => {
+            resolve(result['pageMessages_' + tabId] || []);
+        });
+    });
+}
+
+// 追加消息
+async function appendMessage(tabId, msg) {
+    let list = await loadChatHistory(tabId);
+    list.push(msg);
+    
+    // 裁剪过长历史
+    const MAX_MESSAGES_PER_TAB = 50;
+    if (list.length > MAX_MESSAGES_PER_TAB) {
+        const system = list.filter(m => m.role === 'system' || m.type === 'summary');
+        const others = list.filter(m => m.role !== 'system' && m.type !== 'summary');
+        list = [...system, ...others.slice(-MAX_MESSAGES_PER_TAB + system.length)];
+    }
+    
+    saveChatHistory(tabId, list);
+    return list;
+}
+
 // custom settings
 const defaultSettings = {
     ollamaUrl: 'http://192.168.5.99:11434/api/generate',
@@ -359,8 +391,43 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 
 // 监听消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // 处理聊天历史相关请求
+    if (request.action === 'getChatHistory') {
+        loadChatHistory(request.tabId).then(list => sendResponse({ success: true, list }));
+        return true;
+    }
+    else if (request.action === 'appendChatMessage') {
+        appendMessage(request.tabId, request.message).then(list => sendResponse({ success: true, list }));
+        return true;
+    }
+    else if (request.action === 'getPageContext') {
+        const tabId = request.tabId;
+        if (!tabId) {
+            sendResponse({ success: false, error: 'No tabId provided' });
+            return true;
+        }
+        
+        chrome.storage.local.get(['pageCache'], (result) => {
+            const pageCache = result.pageCache || {};
+            const tabInfo = pageCache[tabId];
+            
+            if (!tabInfo) {
+                sendResponse({ success: false, error: 'No page cache found for this tab' });
+                return;
+            }
+            
+            sendResponse({
+                success: true,
+                title: tabInfo.title || '',
+                url: tabInfo.url || '',
+                content: tabInfo.content || '',
+                summary: tabInfo.summary || ''
+            });
+        });
+        return true;
+    }
     // 处理结构化页面内容消息
-    if (request.action === 'pageStructured') {
+    else if (request.action === 'pageStructured') {
         const tabId = sender.tab ? sender.tab.id : null;
         if (tabId) {
             console.log('收到结构化页面内容:', request.url, request.structuredData);

@@ -3,6 +3,7 @@ import { sendMessageToOllama, getSettings, getActiveSystemPrompt } from '../serv
 import { sendMessageToOpenAI, parseOpenAIStreamingResponse } from '../services/openai-service.js';
 import { renderMarkdown } from '../utils/markdown-renderer.js';
 import { t } from '../utils/i18n.js';
+import { MAX_MESSAGES_PER_TAB, MAX_HISTORY_IN_CONTEXT } from '../constants.js';
 
 // Load AI Chat
 export function loadAIChat(container) {
@@ -628,8 +629,8 @@ export function loadAIChat(container) {
         return contentElement;
     }
 
-    // 修改发送消息函数，使用getActiveSystemPrompt
-    async function sendMessage() {
+    // 修改发送消息函数，实现MVT-0基础对话功能
+    async function handleSend() {
         if (!chatInput.value.trim() || isGenerating) {
             return;
         }
@@ -643,10 +644,37 @@ export function loadAIChat(container) {
         chatInput.value = '';
         adjustTextareaHeight();
         
-        // 添加用户消息到 UI
-        addMessageToUI('user', userMessage);
-        
         try {
+            // 获取当前标签页ID
+            const [{ id: tabId }] = await chrome.tabs.query({ active: true, currentWindow: true });
+            
+            // 1. 写入user消息到历史
+            await chrome.runtime.sendMessage({
+                action: 'appendChatMessage',
+                tabId,
+                message: {
+                    id: Date.now(),
+                    role: 'user',
+                    content: userMessage,
+                    ts: Date.now()
+                }
+            });
+            
+            // 添加用户消息到UI
+            addMessageToUI('user', userMessage);
+            
+            // 2. 拉取完整历史
+            const { list } = await chrome.runtime.sendMessage({
+                action: 'getChatHistory',
+                tabId
+            });
+            
+            // 3. 取得页面摘要
+            const ctx = await chrome.runtime.sendMessage({
+                action: 'getPageContext',
+                tabId
+            });
+            
             // 获取当前活动的系统提示词
             const systemPrompt = await getActiveSystemPrompt();
             
@@ -654,14 +682,18 @@ export function loadAIChat(container) {
             const settings = await getSettings();
             const provider = settings.defaultAI || 'ollama';
             
-            // 创建消息历史数组
-            let allMessages = [
-                { role: "system", content: systemPrompt },
-                ...chatHistory.map(msg => {
-                    return { role: msg.role, content: msg.content };
-                }),
-                { role: "user", content: userMessage }
-            ];
+            // 4. 组装发送给模型的messages
+            // 使用从constants.js导入的MAX_HISTORY_IN_CONTEXT
+            const summaryMsg = ctx && ctx.summary
+                ? { role: 'system', content: `以下是当前页面摘要，供回答参考：\n${ctx.summary}` }
+                : null;
+            
+            const tail = list.filter(m => m.role !== 'system').slice(-MAX_HISTORY_IN_CONTEXT);
+            const messages = [
+                { role: 'system', content: systemPrompt },
+                summaryMsg,
+                ...tail
+            ].filter(Boolean); // 过滤掉null值
             
             // 创建流式显示的消息元素
             streamingMessageElement = document.createElement('div');
@@ -672,13 +704,15 @@ export function loadAIChat(container) {
             chatMessages.appendChild(streamingMessageElement);
             
             // 显示加载指示器
-            contentElement.innerHTML = '<div class="loading-indicator">思考中...</div>';
+            contentElement.innerHTML = '<div class="typing-indicator">思考中<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>';
             
             // 滚动到底部
             chatMessages.scrollTop = chatMessages.scrollHeight;
             
-            // 根据提供商发送消息
+            // 5. 调用服务
             let response;
+            let fullText = '';
+            
             if (provider === 'openai') {
                 // 检查是否有API密钥
                 if (!settings.openaiApiKey) {
@@ -699,17 +733,24 @@ export function loadAIChat(container) {
                 }
             } else {
                 // 使用Ollama
-                response = await sendMessageToOllama(userMessage, allMessages.slice(0, -1), updateStreamingMessage);
+                response = await sendMessageToOllama(userMessage, messages, (chunk, done, full) => {
+                    updateStreamingMessage(chunk, full, done);
+                    fullText = full;
+                });
             }
             
-            // 添加流式响应
-            if (response) {
-                updateStreamingMessage('', response.content, true);
-                chatHistory.push({ role: 'user', content: userMessage });
-                chatHistory.push({ role: 'assistant', content: response.content });
-                
-                // 保存聊天历史到本地存储
-                saveChatHistory(chatHistory);
+            // 6. 流式结束后，写入assistant消息
+            if (fullText) {
+                await chrome.runtime.sendMessage({
+                    action: 'appendChatMessage',
+                    tabId,
+                    message: {
+                        id: Date.now(),
+                        role: 'assistant',
+                        content: fullText,
+                        ts: Date.now()
+                    }
+                });
             }
         } catch (error) {
             console.error('发送消息错误:', error);
@@ -967,13 +1008,13 @@ export function loadAIChat(container) {
     refreshPageContentButton.addEventListener('click', refreshPageContent);
 
     // 新增：绑定发送按钮事件
-    sendButton.addEventListener('click', sendMessage);
+    sendButton.addEventListener('click', handleSend);
 
     // 新增：绑定输入框回车事件
     chatInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            sendMessage();
+            handleSend();
         }
     });
 
