@@ -298,6 +298,76 @@ export async function loadSettings(container) {
         fetchModelList(ollamaHostInput.value + ':' + ollamaPortInput.value + ollamaPathInput.value, useProxyCheckbox.checked, currentModel);
     });
 
+    // 检查是否为 OpenAI 兼容 API
+    function isOpenAICompatibleUrl(url) {
+        return url && (url.includes('/v1') || url.includes('openai') || url.includes('api.openai.com'));
+    }
+
+    // 获取 OpenAI 模型列表
+    async function fetchOpenAIModels(apiKey, baseUrl, useProxy) {
+        let modelListUrl = baseUrl.replace(/\/v1\/.*$/, '/v1/models');
+        if (!modelListUrl.endsWith('/v1/models')) {
+            modelListUrl = modelListUrl.endsWith('/') ? 
+                `${modelListUrl}v1/models` : `${modelListUrl}/v1/models`;
+        }
+
+        if (useProxy) {
+            modelListUrl = `https://cors-anywhere.herokuapp.com/${modelListUrl}`;
+        }
+
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+        };
+
+        const response = await fetch(modelListUrl, {
+            method: 'GET',
+            headers: headers
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const error = new Error(errorData.error?.message || 'Failed to fetch models');
+            error.status = response.status;
+            error.code = errorData.error?.code;
+            throw error;
+        }
+
+        const data = await response.json();
+        return data.data || [];
+    }
+
+    // 获取 Ollama 模型列表
+    async function fetchOllamaModels(url, useProxy) {
+        let modelListUrl = url.replace('/api/chat', '').replace('/api/generate', '');
+        if (!modelListUrl.endsWith('/')) {
+            modelListUrl += '/';
+        }
+        modelListUrl += 'api/tags';
+
+        if (useProxy) {
+            modelListUrl = `https://cors-anywhere.herokuapp.com/${modelListUrl}`;
+        }
+
+        const response = await fetch(modelListUrl, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Cache-Control': 'no-cache'
+            }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            const error = new Error(`API request failed with status ${response.status}: ${errorText}`);
+            error.status = response.status;
+            throw error;
+        }
+
+        const data = await response.json();
+        return data.models || [];
+    }
+
     // Fetch model list
     async function fetchModelList(url, useProxy, selectedModel) {
         if (!url) {
@@ -313,73 +383,78 @@ export async function loadSettings(container) {
         ollamaModelSelect.disabled = true;
 
         try {
-            // Build model list API URL
-            let modelListUrl = url.replace('/api/chat', '').replace('/api/generate', '');
-            if (!modelListUrl.endsWith('/')) {
-                modelListUrl += '/';
+            const isOpenAI = isOpenAICompatibleUrl(url);
+            const openaiApiKey = document.getElementById('openai-api-key')?.value.trim() || '';
+
+            let models = [];
+            console.log('Fetching model list from:', url);
+
+            if (isOpenAI) {
+                // Handle OpenAI compatible API
+                if (!openaiApiKey) {
+                    throw new Error('OpenAI API key is required');
+                }
+                
+                models = await fetchOpenAIModels(openaiApiKey, url, useProxy);
+                
+                // Add default models if none returned
+                if (models.length === 0) {
+                    models = [
+                        { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' },
+                        { id: 'gpt-4', name: 'GPT-4' },
+                        { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' }
+                    ];
+                }
+            } else {
+                // Handle Ollama API
+                models = await fetchOllamaModels(url, useProxy);
             }
-            modelListUrl += 'api/tags';
 
-            console.log('Fetching model list from:', modelListUrl);
+            // Clear and populate model select
+            ollamaModelSelect.innerHTML = '';
 
-            // If proxy is enabled, use CORS proxy
-            if (useProxy) {
-                modelListUrl = `https://cors-anywhere.herokuapp.com/${modelListUrl}`;
-                console.log('Using CORS proxy, URL:', modelListUrl);
-            }
+            if (models.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = t('settings.sections.ollama.model.empty');
+                ollamaModelSelect.appendChild(option);
+            } else {
+                // Add empty option
+                const emptyOption = document.createElement('option');
+                emptyOption.value = '';
+                emptyOption.textContent = t('settings.sections.ollama.model.placeholder');
+                ollamaModelSelect.appendChild(emptyOption);
 
-            // 使用 AbortController 设置超时
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
-
-            try {
-                const response = await fetch(modelListUrl, {
-                    method: 'GET',
-                    signal: controller.signal,
-                    headers: {
-                        'Accept': 'application/json',
-                        'Cache-Control': 'no-cache'
+                // Add models
+                models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.name || model.id;
+                    
+                    // 显示模型名称和大小（如果有）
+                    if (model.size !== undefined) {
+                        option.textContent = `${model.name || model.id} (${formatSize(model.size)})`;
+                    } else {
+                        option.textContent = model.name || model.id;
                     }
+                    
+                    // Select the previously selected model if it exists
+                    if (currentSelectedModel && 
+                        (model.name === currentSelectedModel || 
+                         model.id === currentSelectedModel ||
+                         option.value === currentSelectedModel)) {
+                        option.selected = true;
+                    }
+                    
+                    ollamaModelSelect.appendChild(option);
                 });
 
-                // 清除超时
-                clearTimeout(timeoutId);
-
-                if (response.ok) {
-                    const data = await response.json();
-
-                    if (data.models && Array.isArray(data.models) && data.models.length > 0) {
-                        // Clear selection
-                        ollamaModelSelect.innerHTML = '';
-
-                        // Add model options
-                        data.models.forEach(model => {
-                            const option = document.createElement('option');
-                            option.value = model.name;
-                            option.textContent = `${model.name} (${formatSize(model.size)})`;
-                            ollamaModelSelect.appendChild(option);
-                        });
-
-                        // Try to restore previously selected model
-                        if (currentSelectedModel && ollamaModelSelect.querySelector(`option[value="${currentSelectedModel}"]`)) {
-                            ollamaModelSelect.value = currentSelectedModel;
-                        }
-
-                        ollamaModelSelect.disabled = false;
-                    } else {
-                        ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.empty')}</option>`;
-                        ollamaModelSelect.disabled = true;
-                    }
-                } else {
-                    const errorText = await response.text();
-                    console.error('Error response from API:', response.status, errorText);
-                    ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.error')}: ${response.status} ${response.statusText}</option>`;
-                    ollamaModelSelect.disabled = true;
+                // Try to restore previously selected model if not already selected
+                if (currentSelectedModel && !ollamaModelSelect.value && 
+                    ollamaModelSelect.querySelector(`option[value="${currentSelectedModel}"]`)) {
+                    ollamaModelSelect.value = currentSelectedModel;
                 }
-            } catch (fetchError) {
-                // 清除超时
-                clearTimeout(timeoutId);
-                throw fetchError; // 重新抛出错误，由外层 catch 处理
+
+                ollamaModelSelect.disabled = false;
             }
         } catch (error) {
             console.error('Error fetching model list:', error);
@@ -397,17 +472,17 @@ export async function loadSettings(container) {
                 errorMessage = '请求超时，请检查 Ollama 服务是否正在运行';
             } else if (error.message && error.message.includes('Failed to fetch')) {
                 errorMessage = '无法连接到 Ollama 服务，请检查 URL 和网络连接';
-            } else if (error.message && error.message.includes('NetworkError')) {
-                errorMessage = '网络错误，可能是 CORS 问题，请尝试启用代理';
-            } else if (error.toString) {
-                // 尝试获取更有意义的错误信息
-                errorMessage = error.toString();
+            } else if (error.message && error.message.includes('NetworkError') || 
+                      error.message && error.message.includes('Failed to execute')) {
+                errorMessage = '网络错误，请检查服务是否正在运行，或尝试启用代理';
+            } else if (error.message) {
+                errorMessage = error.message;
             } else {
-                // 如果无法获取有意义的错误信息，使用通用消息
                 errorMessage = '连接服务器时出错，请检查网络和服务器状态';
             }
 
-            ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.error')}: ${errorMessage}</option>`;
+            const errorPrefix = isOpenAICompatibleUrl(url) ? 'OpenAI' : 'Ollama';
+            ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.error')} (${errorPrefix}): ${errorMessage}</option>`;
             ollamaModelSelect.disabled = true;
         }
     }
@@ -422,44 +497,109 @@ export async function loadSettings(container) {
         return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
+    // 测试 OpenAI 连接
+    async function testOpenAIConnection(apiKey, baseUrl, useProxy) {
+        let testUrl = baseUrl;
+        if (!testUrl.endsWith('/v1/chat/completions')) {
+            testUrl = testUrl.endsWith('/') ? 
+                `${testUrl}v1/chat/completions` : `${testUrl}/v1/chat/completions`;
+        }
+
+        if (useProxy) {
+            testUrl = `https://cors-anywhere.herokuapp.com/${testUrl}`;
+        }
+
+        const response = await fetch(testUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: 'gpt-3.5-turbo',
+                messages: [{ role: 'user', content: 'test' }],
+                max_tokens: 5
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const error = new Error(errorData.error?.message || 'API request failed');
+            error.status = response.status;
+            error.code = errorData.error?.code;
+            throw error;
+        }
+
+        return await response.json();
+    }
+
+    // 测试 Ollama 连接
+    async function testOllamaConnection(baseUrl, useProxy) {
+        let testUrl = baseUrl;
+        if (!testUrl.includes('/api/version')) {
+            testUrl = testUrl.replace(/\/$/, '') + '/api/version';
+        }
+
+        if (useProxy) {
+            testUrl = `https://cors-anywhere.herokuapp.com/${testUrl}`;
+        }
+
+        const response = await fetch(testUrl, {
+            method: 'GET'
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            const error = new Error(`API request failed with status ${response.status}: ${errorText}`);
+            error.status = response.status;
+            throw error;
+        }
+
+        return await response.json();
+    }
+
     // Test connection
     testConnectionButton.addEventListener('click', async () => {
         connectionStatus.textContent = t('settings.status.testing');
         connectionStatus.className = 'connection-status testing';
 
+        const fullUrl = `${ollamaHostInput.value}:${ollamaPortInput.value}${ollamaPathInput.value}`;
+        const isOpenAI = isOpenAICompatibleUrl(fullUrl);
+        const openaiApiKey = document.getElementById('openai-api-key')?.value.trim() || '';
+
         try {
-            // Build test URL
-            let testUrl = ollamaHostInput.value + ':' + ollamaPortInput.value;
-
-            // Make sure URL ends with /api/version
-            if (!testUrl.includes('/api/version')) {
-                testUrl = testUrl.replace(/\/$/, '') + '/api/version';
-            }
-
-            // If proxy is enabled, use CORS proxy
-            if (useProxyCheckbox.checked) {
-                testUrl = `https://cors-anywhere.herokuapp.com/${testUrl}`;
-            }
-
-            const response = await fetch(testUrl, {
-                method: 'GET'
-            });
-
-            if (response.ok) {
-                const data = await response.json();
+            if (isOpenAI) {
+                if (!openaiApiKey) {
+                    throw new Error('OpenAI API key is required');
+                }
+                await testOpenAIConnection(openaiApiKey, fullUrl, useProxyCheckbox.checked);
+                connectionStatus.textContent = t('settings.status.openai.success');
+                connectionStatus.className = 'connection-status success';
+            } else {
+                const data = await testOllamaConnection(fullUrl, useProxyCheckbox.checked);
                 connectionStatus.textContent = t('settings.status.success', { version: data.version });
                 connectionStatus.className = 'connection-status success';
-
-                // Save current selected model
-                const currentModel = ollamaModelSelect.value;
-                // Refresh model list
-                fetchModelList(ollamaHostInput.value + ':' + ollamaPortInput.value + ollamaPathInput.value, useProxyCheckbox.checked, currentModel);
-            } else {
-                connectionStatus.textContent = t('settings.status.error', { error: `${response.status} ${response.statusText}` });
-                connectionStatus.className = 'connection-status error';
             }
+
+            // 刷新模型列表
+            const currentModel = ollamaModelSelect.value;
+            fetchModelList(fullUrl, useProxyCheckbox.checked, currentModel);
         } catch (error) {
-            connectionStatus.textContent = t('settings.status.error', { error: error.message });
+            console.error('Connection test failed:', error);
+            
+            let errorMessage = error.message;
+            if (error.status === 401) {
+                errorMessage = 'API 密钥无效，请检查您的 API 密钥';
+            } else if (error.status === 404) {
+                errorMessage = 'API 端点不存在，请检查 URL 是否正确';
+            } else if (error.status === 429) {
+                errorMessage = '请求过于频繁，请稍后再试';
+            } else if (error.message && error.message.includes('Failed to fetch')) {
+                errorMessage = '无法连接到服务，请检查 URL 和网络连接';
+            }
+
+            const errorPrefix = isOpenAI ? 'OpenAI' : 'Ollama';
+            connectionStatus.textContent = `${t('settings.status.error')} (${errorPrefix}): ${errorMessage}`;
             connectionStatus.className = 'connection-status error';
         }
     });
@@ -678,7 +818,7 @@ export async function loadSettings(container) {
     const openaiBaseUrl = document.getElementById('openai-base-url');
     const openaiModelSelect = document.getElementById('openai-model-select');
     const refreshOpenAIModels = document.getElementById('refresh-openai-models');
-    const testOpenAIConnection = document.getElementById('test-openai-connection');
+    const testOpenAIConnectionBtn = document.getElementById('test-openai-connection');
     const openaiConnectionStatus = document.getElementById('openai-connection-status');
     const openaiCustomModel = document.getElementById('openai-custom-model');
     // 刷新 OpenAI 模型列表
@@ -724,7 +864,7 @@ export async function loadSettings(container) {
     });
 
     // 测试 OpenAI 连接
-    testOpenAIConnection.addEventListener('click', async () => {
+    testOpenAIConnectionBtn.addEventListener('click', async () => {
         const apiKey = openaiApiKey.value.trim();
         const baseUrl = openaiBaseUrl.value.trim();
 

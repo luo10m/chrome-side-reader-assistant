@@ -135,6 +135,9 @@
     "status": {
       "testing": "测试连接中...",
       "success": "连接成功! Ollama 版本: {version}",
+      "openai": {
+        "success": "成功连接到 OpenAI API!"
+      },
       "error": "连接失败: {error}",
       "apiTesting": "测试 API 中...",
       "apiSuccess": "API 测试成功! 响应: {response}",

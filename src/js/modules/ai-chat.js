@@ -690,7 +690,13 @@ export function loadAIChat(container) {
                 }
                 
                 // 使用OpenAI
-                response = await sendMessageToOpenAI(userMessage, allMessages.slice(0, -1), updateStreamingMessage);
+                response = await sendMessageToOpenAI(userMessage, allMessages.slice(0, -1), systemPrompt);
+                
+                // 处理OpenAI的流式响应
+                if (response.streaming) {
+                    await handleStreamingResponse(response.reader, response.decoder, updateStreamingMessage, userMessage);
+                    return; // 流式响应会自行处理UI更新
+                }
             } else {
                 // 使用Ollama
                 response = await sendMessageToOllama(userMessage, allMessages.slice(0, -1), updateStreamingMessage);
@@ -723,6 +729,57 @@ export function loadAIChat(container) {
         }
     }
 
+    // 处理流式响应
+    async function handleStreamingResponse(reader, decoder, callback, userMessage) {
+        let fullText = '';
+        
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n').filter(line => line.trim() !== '');
+                
+                for (const line of lines) {
+                    const message = line.replace(/^data: /, '').trim();
+                    if (message === '[DONE]') {
+                        break;
+                    }
+                    
+                    try {
+                        const parsed = JSON.parse(message);
+                        const content = parsed.choices[0]?.delta?.content || '';
+                        if (content) {
+                            fullText += content;
+                            callback(content, fullText, false);
+                        }
+                    } catch (e) {
+                        console.error('Error parsing message:', e, 'Raw message:', message);
+                    }
+                }
+            }
+            
+            // 完成处理
+            callback('', fullText, true);
+            
+            // 添加到聊天历史
+            chatHistory.push({ role: 'user', content: userMessage });
+            chatHistory.push({ role: 'assistant', content: fullText });
+            saveChatHistory(chatHistory);
+            
+        } catch (error) {
+            console.error('Error reading stream:', error);
+            const errorElement = streamingMessageElement?.querySelector('.message-content');
+            if (errorElement) {
+                errorElement.innerHTML = `<div class="error-message">流式响应错误: ${error.message}</div>`;
+            }
+        } finally {
+            isGenerating = false;
+            sendButton.disabled = false;
+        }
+    }
+    
     // 更新流式消息
     function updateStreamingMessage(chunk, fullText, done = false) {
         if (!streamingMessageElement) return;
@@ -732,7 +789,7 @@ export function loadAIChat(container) {
 
         if (done) {
             // 完成响应，添加复制按钮
-            contentElement.innerHTML = renderMarkdown(fullText);
+            contentElement.innerHTML = renderMarkdown(fullText || '');
 
             // 添加操作按钮
             const actionsElement = document.createElement('div');
