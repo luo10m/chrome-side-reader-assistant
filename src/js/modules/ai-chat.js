@@ -724,7 +724,7 @@ export function loadAIChat(container) {
                 }
                 
                 // 使用OpenAI
-                response = await sendMessageToOpenAI(userMessage, allMessages.slice(0, -1), systemPrompt);
+                response = await sendMessageToOpenAI(userMessage, messages, systemPrompt);
                 
                 // 处理OpenAI的流式响应
                 if (response.streaming) {
