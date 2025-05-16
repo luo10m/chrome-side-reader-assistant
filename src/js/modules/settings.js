@@ -339,33 +339,49 @@ export async function loadSettings(container) {
 
     // 获取 Ollama 模型列表
     async function fetchOllamaModels(url, useProxy) {
-        let modelListUrl = url.replace('/api/chat', '').replace('/api/generate', '');
-        if (!modelListUrl.endsWith('/')) {
-            modelListUrl += '/';
-        }
-        modelListUrl += 'api/tags';
-
-        if (useProxy) {
-            modelListUrl = `https://cors-anywhere.herokuapp.com/${modelListUrl}`;
-        }
-
-        const response = await fetch(modelListUrl, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'Cache-Control': 'no-cache'
+        try {
+            let modelListUrl = url.replace('/api/chat', '').replace('/api/generate', '');
+            if (!modelListUrl.endsWith('/')) {
+                modelListUrl += '/';
             }
-        });
+            modelListUrl += 'api/tags';
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            const error = new Error(`API request failed with status ${response.status}: ${errorText}`);
-            error.status = response.status;
-            throw error;
+            if (useProxy) {
+                modelListUrl = `https://cors-anywhere.herokuapp.com/${modelListUrl}`;
+            }
+
+            console.log(`Fetching Ollama models from: ${modelListUrl}`);
+            
+            const response = await fetch(modelListUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-cache'
+                },
+                // 添加超时处理
+                signal: AbortSignal.timeout(5000) // 5秒超时
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.warn(`Failed to fetch Ollama models: ${response.status} ${errorText}`);
+                return [];
+            }
+
+            const data = await response.json();
+            console.log('Successfully fetched Ollama models:', data.models || []);
+            return data.models || [];
+        } catch (error) {
+            // 记录错误但不抛出，返回空数组
+            if (error.name === 'AbortError') {
+                console.warn('Fetching Ollama models timed out after 5 seconds');
+            } else if (error.message && error.message.includes('Failed to fetch')) {
+                console.warn('Failed to connect to Ollama server. Please check if the service is running and the URL is correct.');
+            } else {
+                console.warn('Error fetching Ollama models:', error);
+            }
+            return [];
         }
-
-        const data = await response.json();
-        return data.models || [];
     }
 
     // Fetch model list

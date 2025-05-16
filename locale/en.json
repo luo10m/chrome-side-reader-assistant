@@ -24,7 +24,8 @@
     "regenerate": "Regenerate response",
     "summarize": "Summarize Page",
     "summarizing": "Summarizing...",
-    "refreshContent": "Refresh Content"
+    "refreshContent": "Refresh Content",
+    "confirmNewChat": "Are you sure you want to start a new chat? This will clear all messages in the current page."
   },
   "settings": {
     "header": "Settings",

@@ -24,7 +24,8 @@
     "regenerate": "重新生成回复",
     "summarize": "摘要",
     "summarizing": "正在摘要...",
-    "refreshContent": "刷新内容"
+    "refreshContent": "刷新内容",
+    "confirmNewChat": "确定要开始新对话吗？这将清空当前页面的所有消息。"
   },
   "settings": {
     "header": "设置",
