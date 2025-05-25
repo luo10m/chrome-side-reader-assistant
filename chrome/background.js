@@ -1,6 +1,205 @@
 // Import page-cache-listener.js
 importScripts('../src/js/background/page-cache-listener.js');
 
+// Badge 管理器
+class BadgeManager {
+    constructor() {
+        this.diffCounts = {};
+        this.notificationDebounce = {};
+        this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000);
+    }
+    
+    // 更新 Badge 计数
+    async updateBadge(tabId, increment = 1) {
+        const key = `badge_${tabId}`;
+        const result = await chrome.storage.local.get([key]);
+        let count = parseInt(result[key] || '0') + increment;
+        
+        // 保存到 storage
+        await chrome.storage.local.set({ [key]: count });
+        
+        // 更新 UI
+        await chrome.action.setBadgeText({
+            tabId: tabId,
+            text: count > 0 ? (count > 99 ? '99+' : count.toString()) : ''
+        });
+        
+        if (count > 0) {
+            await chrome.action.setBadgeBackgroundColor({
+                tabId: tabId, 
+                color: '#FF4D4F'
+            });
+        }
+        
+        return count;
+    }
+    
+    // 清除 Badge
+    async clearBadge(tabId) {
+        const key = `badge_${tabId}`;
+        await chrome.storage.local.remove(key);
+        
+        await chrome.action.setBadgeText({
+            tabId: tabId,
+            text: ''
+        });
+        
+        // 清除通知防抖状态
+        if (this.notificationDebounce[tabId]) {
+            clearTimeout(this.notificationDebounce[tabId]);
+            delete this.notificationDebounce[tabId];
+        }
+    }
+    
+    // 清理不存在的标签页
+    async cleanup() {
+        const tabs = await chrome.tabs.query({});
+        const activeTabIds = new Set(tabs.map(t => t.id));
+        
+        const allKeys = await chrome.storage.local.get(null);
+        
+        for (const [key, value] of Object.entries(allKeys)) {
+            if (key.startsWith('badge_')) {
+                const tabId = parseInt(key.split('_')[1]);
+                if (!isNaN(tabId) && !activeTabIds.has(tabId)) {
+                    await chrome.storage.local.remove(key);
+                }
+            }
+        }
+    }
+}
+
+// 通知管理器
+class NotificationManager {
+    constructor() {
+        this.debounceMap = {};
+    }
+    
+    // 创建通知
+    async createNotification(tabId, title, diffCount) {
+        // 防抖处理
+        if (this.debounceMap[tabId]) {
+            clearTimeout(this.debounceMap[tabId]);
+        }
+        
+        this.debounceMap[tabId] = setTimeout(async () => {
+            try {
+                await chrome.notifications.create(`page-update-${tabId}`, {
+                    type: 'basic',
+                    iconUrl: 'assets/icon48.png',
+                    title: '页面有新内容',
+                    message: `${diffCount} 条新更新：${title}`,
+                    priority: 1
+                });
+            } catch (error) {
+                console.error('创建通知失败:', error);
+            } finally {
+                delete this.debounceMap[tabId];
+            }
+        }, 2000);
+    }
+}
+
+// 轮询管理器
+class PollingManager {
+    constructor() {
+        this.interval = 30000; // 30秒轮询一次
+        this.lastHashes = {};
+        this.pollInterval = null;
+    }
+    
+    // 启动轮询
+    start() {
+        if (this.pollInterval) return;
+        
+        this.pollInterval = setInterval(async () => {
+            try {
+                // 只检查活跃窗口的标签页
+                const tabs = await chrome.tabs.query({ 
+                    active: true, 
+                    currentWindow: true 
+                });
+                
+                for (const tab of tabs) {
+                    await this.checkTab(tab);
+                }
+            } catch (error) {
+                console.error('轮询检查失败:', error);
+            }
+        }, this.interval);
+    }
+    
+    // 检查标签页内容变化
+    async checkTab(tab) {
+        try {
+            // 只处理 http 和 https 页面
+            if (!tab.url.startsWith('http')) return;
+            
+            // 发送消息给内容脚本获取当前页面内容的哈希
+            const response = await chrome.tabs.sendMessage(tab.id, { 
+                action: 'getContentHash' 
+            });
+            
+            if (response && response.hash) {
+                const lastHash = this.lastHashes[tab.id];
+                
+                // 如果哈希值变化，触发内容变化事件
+                if (lastHash && lastHash !== response.hash) {
+                    console.log(`[Polling] 检测到内容变化: ${tab.url}`);
+                    
+                    // 触发内容变化事件
+                    chrome.runtime.sendMessage({
+                        action: 'pageDiff',
+                        tabId: tab.id,
+                        diffCount: 1,
+                        title: tab.title,
+                        url: tab.url,
+                        source: 'polling'
+                    });
+                }
+                
+                // 更新最后已知的哈希值
+                this.lastHashes[tab.id] = response.hash;
+            }
+        } catch (error) {
+            // 标签页可能已关闭或无法访问
+            delete this.lastHashes[tab.id];
+        }
+    }
+    
+    // 停止轮询
+    stop() {
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+        }
+    }
+}
+
+// 初始化管理器
+const badgeManager = new BadgeManager();
+const notificationManager = new NotificationManager();
+const pollingManager = new PollingManager();
+
+// 启动轮询
+pollingManager.start();
+
+// 监听通知点击
+chrome.notifications.onClicked.addListener(async (notificationId) => {
+    if (notificationId.startsWith('page-update-')) {
+        const tabId = parseInt(notificationId.split('-')[2]);
+        if (!isNaN(tabId)) {
+            try {
+                await chrome.tabs.update(tabId, { active: true });
+                await badgeManager.clearBadge(tabId);
+                await chrome.notifications.clear(notificationId);
+            } catch (error) {
+                console.error('处理通知点击失败:', error);
+            }
+        }
+    }
+});
+
 // Set panel behavior to open on action click
 chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })

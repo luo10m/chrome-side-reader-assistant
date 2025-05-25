@@ -19,7 +19,9 @@
     "storage",
     "commands",
     "clipboardWrite",
-    "tabs"
+    "tabs",
+    "notifications",
+    "alarms"
   ],
   "host_permissions": [
     "http://localhost/*",

@@ -15,8 +15,6 @@ export function loadAIChat(container) {
 
     // 添加当前标签页跟踪
     let currentTabId = null;
-
-    // 在文件顶部添加变量
     let isGenerating = false; // 标记 AI 是否正在生成回复
     let isSummarizing = false; // 标记是否正在生成摘要
     let currentSummaryMessageId = null; // 当前摘要消息的ID

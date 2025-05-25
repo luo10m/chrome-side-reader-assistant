@@ -1,3 +1,58 @@
+// 生成内容哈希
+function generateContentHash(content) {
+    if (!content) return '';
+    
+    // 简单哈希函数，用于检测内容变化
+    let hash = 0;
+    const str = typeof content === 'string' ? content : JSON.stringify(content);
+    
+    if (str.length === 0) return '0';
+    
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    
+    return hash.toString(16);
+}
+
+// 获取页面内容哈希
+function getPageContentHash() {
+    try {
+        // 获取页面主要内容区域
+        const mainContent = document.querySelector('main, article, .content, #content, .main, #main') || document.body;
+        
+        // 提取关键元素
+        const elements = mainContent.querySelectorAll('p, div, article, section, header, footer, aside, nav, figure, figcaption');
+        
+        // 提取文本内容
+        let content = '';
+        elements.forEach(el => {
+            // 排除隐藏元素
+            if (el.offsetParent !== null) {
+                content += el.textContent.trim() + '\n';
+            }
+        });
+        
+        // 生成哈希
+        return generateContentHash(content);
+    } catch (error) {
+        console.error('生成内容哈希失败:', error);
+        return '';
+    }
+}
+
+// 监听来自背景脚本的消息
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'getContentHash') {
+        const hash = getPageContentHash();
+        sendResponse({ hash });
+        return true; // 保持消息通道开放以支持异步响应
+    }
+    return false;
+});
+
 // 监听消息以复制代码
 document.addEventListener('click', (event) => {
     if (event.target.classList.contains('copy-button')) {
