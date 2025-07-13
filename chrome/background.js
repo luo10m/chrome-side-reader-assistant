@@ -844,6 +844,38 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         return true;
     }
+    // 处理翻译请求
+    else if (request.action === 'fetchTranslation') {
+        // 创建一个唯一的消息ID
+        const messageId = Date.now().toString();
+        
+        // 发送初始响应
+        sendResponse({ messageId });
+        
+        // 处理翻译请求
+        fetchTranslationWithOpenAI(request.text, request.targetLang)
+            .then(response => {
+                // 发送翻译结果
+                chrome.runtime.sendMessage({
+                    action: 'translationResponse',
+                    messageId,
+                    success: true,
+                    translatedText: response
+                });
+            })
+            .catch(error => {
+                console.error('Translation error:', error);
+                // 发送错误信息
+                chrome.runtime.sendMessage({
+                    action: 'translationResponse',
+                    messageId,
+                    success: false,
+                    error: error.message
+                });
+            });
+        
+        return true; // 保持消息通道打开
+    }
     // 处理其他类型的请求
     // ...其他处理...
     return true; // 保持通道打开
@@ -994,6 +1026,87 @@ function validateOpenAISettings() {
             resolve(isValid);
         });
     });
+}
+
+// 使用OpenAI API进行翻译
+async function fetchTranslationWithOpenAI(text, targetLang) {
+    // 获取当前设置
+    const result = await new Promise(resolve => {
+        chrome.storage.local.get(['settings'], resolve);
+    });
+    
+    const settings = result.settings || defaultSettings;
+    const apiKey = settings.openaiApiKey;
+    
+    if (!apiKey) {
+        throw new Error('OpenAI API Key is not configured');
+    }
+    
+    const baseUrl = settings.openaiBaseUrl || 'https://api.openai.com/v1';
+    const model = settings.openaiCustomModel || settings.openaiModel || 'gpt-3.5-turbo';
+    
+    // 语言代码映射
+    const languageMap = {
+        'en': 'English',
+        'zh_cn': 'Chinese (Simplified)',
+        'zh-CN': 'Chinese (Simplified)',
+        'zh_tw': 'Chinese (Traditional)',
+        'zh-TW': 'Chinese (Traditional)',
+        'ja': 'Japanese',
+        'ko': 'Korean',
+        'fr': 'French',
+        'de': 'German',
+        'es': 'Spanish',
+        'ru': 'Russian',
+        'ar': 'Arabic',
+        'hi': 'Hindi',
+        'pt': 'Portuguese',
+        'it': 'Italian'
+    };
+    
+    const targetLanguage = languageMap[targetLang] || targetLang;
+    
+    try {
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: model,
+                messages: [
+                    {
+                        role: 'system',
+                        content: `You are a professional translator. Translate the given text to ${targetLanguage}. Only return the translated text, no explanations or additional content.`
+                    },
+                    {
+                        role: 'user',
+                        content: text
+                    }
+                ],
+                temperature: 0.3,
+                max_tokens: 2000
+            })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`OpenAI API error: ${errorData.error?.message || 'Unknown error'}`);
+        }
+        
+        const data = await response.json();
+        const translatedText = data.choices?.[0]?.message?.content?.trim();
+        
+        if (!translatedText) {
+            throw new Error('No translation received from OpenAI');
+        }
+        
+        return translatedText;
+    } catch (error) {
+        console.error('Translation error:', error);
+        throw error;
+    }
 }
 
 // 恢复: Send message to Ollama with streaming support

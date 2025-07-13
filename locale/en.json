@@ -171,6 +171,10 @@
     "openedInNewTab": "Translation opened in a new tab",
     "copied": "Copied!",
     "summarize": "Summarize",
-    "summarizing": "Summarizing..."
+    "summarizing": "Summarizing...",
+    "enterTextPlaceholder": "Enter text to translate...",
+    "translationPlaceholder": "Translation will appear here",
+    "autoDetect": "Auto Detect",
+    "autoDetected": "Auto Detected"
   }
 }

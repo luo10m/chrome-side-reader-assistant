@@ -169,6 +169,10 @@
     "translationFailed": "翻译失败",
     "enterTextPrompt": "请输入要翻译的文本",
     "openedInNewTab": "翻译已在新标签页中打开",
-    "copied": "已复制！"
+    "copied": "已复制！",
+    "enterTextPlaceholder": "输入要翻译的文本...",
+    "translationPlaceholder": "翻译结果将显示在这里",
+    "autoDetect": "自动检测",
+    "autoDetected": "自动检测"
   }
 }

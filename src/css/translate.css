@@ -51,9 +51,11 @@
     background-color: var(--card-bg);
     color: var(--text-color);
     font-size: 14px;
+    transition: background-color 0.5s ease;
 }
 
-.translate-text-container, .translate-result-container {
+.translate-text-container,
+.translate-result-container {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -79,7 +81,8 @@
     overflow-y: auto;
 }
 
-.translate-text-actions, .translate-result-actions {
+.translate-text-actions,
+.translate-result-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
@@ -119,6 +122,41 @@
     background-color: var(--primary-hover-color);
 }
 
+.translate-button:disabled {
+    background-color: var(--border-color);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.translate-button.loading {
+    position: relative;
+    color: transparent;
+}
+
+.translate-button.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+    border: 2px solid transparent;
+    border-top-color: var(--loading-color, #ffffff);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
 .translate-loading {
     color: var(--text-secondary-color);
     font-style: italic;
@@ -138,21 +176,24 @@
 }
 
 .copy-notification {
-    position: absolute;
-    top: -30px;
-    right: 0;
-    background-color: var(--success-bg);
-    color: var(--success-color);
-    padding: 4px 8px;
-    border-radius: 4px;
+    position: fixed;
+    background-color: var(--success-bg, #4CAF50);
+    color: var(--success-color, white);
+    padding: 8px 12px;
+    border-radius: 6px;
     font-size: 12px;
-    animation: fadeOut 2s forwards;
+    font-weight: 500;
+    z-index: 1000;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-@keyframes fadeOut {
-    0% { opacity: 1; }
-    70% { opacity: 1; }
-    100% { opacity: 0; }
+.placeholder {
+    color: var(--text-secondary-color);
+    font-style: italic;
+    opacity: 0.7;
 }
 
 .translate-text-area .translate-actions {
@@ -164,4 +205,10 @@
     background-color: var(--card-bg);
     padding: 2px;
     z-index: 10;
-} 
+}
+
+/* 用于在语言更改时高亮显示下拉菜单的样式 */
+.highlight-change {
+    background-color: #e8f0fe !important;
+    /* 一个淡蓝色的高亮颜色 */
+}
