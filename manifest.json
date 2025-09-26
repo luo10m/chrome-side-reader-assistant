@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Side-AI",
+  "name": "Chrome Side Reader Assistant",
   "version": "1.0.5",
-  "description": "A Chrome extension for accessing any ai services",
+  "description": "A Chrome extension for AI-powered reading assistance and content analysis",
   "action": {
     "default_title": "Side-AI",
     "default_icon": {
@@ -20,7 +20,6 @@
     "commands",
     "clipboardWrite",
     "tabs",
-    "notifications",
     "alarms"
   ],
   "host_permissions": [

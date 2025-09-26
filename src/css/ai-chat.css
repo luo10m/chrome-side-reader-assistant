@@ -71,16 +71,20 @@
     width: calc(100% - 20px);
     box-sizing: border-box;
     margin: 0 10px;
-    white-space: pre-line !important; /* 关键改动：保留换行但合并空格 */
-    overflow-wrap: break-word !important; /* 允许长单词在单词边界处换行 */
-    word-break: keep-all !important; /* 防止在 CJK 字符间换行 */
+    white-space: pre-line !important;
+    /* 关键改动：保留换行但合并空格 */
+    overflow-wrap: break-word !important;
+    /* 允许长单词在单词边界处换行 */
+    word-break: keep-all !important;
+    /* 防止在 CJK 字符间换行 */
 }
 
 /* 摘要消息内部元素 */
 .summary-message .message-content p {
     white-space: pre-line !important;
     overflow-wrap: break-word !important;
-    word-break: keep-all !important; /* 防止在 CJK 字符间换行 */
+    word-break: keep-all !important;
+    /* 防止在 CJK 字符间换行 */
     text-align: left !important;
 }
 
@@ -175,10 +179,12 @@
         transform: translateY(0px);
         opacity: 0.4;
     }
+
     50% {
         transform: translateY(-5px);
         opacity: 0.8;
     }
+
     100% {
         transform: translateY(0px);
         opacity: 0.4;
@@ -228,7 +234,8 @@
 
 /* 添加图标颜色过滤器变量 */
 :root {
-    --icon-filter: none; /* 默认不过滤 */
+    --icon-filter: none;
+    /* 默认不过滤 */
     --code-bg: #f5f5f5;
     --code-color: #333;
     --code-comment: #6a737d;
@@ -242,7 +249,8 @@
 }
 
 [data-theme="dark"] {
-    --icon-filter: invert(1); /* 暗色模式下反转颜色 */
+    --icon-filter: invert(1);
+    /* 暗色模式下反转颜色 */
     --code-bg: #1e1e1e;
     --code-color: #d4d4d4;
     --code-comment: #6a9955;
@@ -259,7 +267,8 @@
 #send-button img {
     width: 20px;
     height: 20px;
-    filter: brightness(0) invert(1); /* 始终保持白色 */
+    filter: brightness(0) invert(1);
+    /* 始终保持白色 */
 }
 
 .chat-input-container {
@@ -299,6 +308,19 @@
     cursor: not-allowed;
 }
 
+/* 输入框placeholder样式 */
+#chat-input::placeholder {
+    color: var(--secondary-text);
+    opacity: 0.9;
+    /* 提高placeholder可见性 */
+}
+
+/* 确保暗色模式下placeholder也清晰可见 */
+[data-theme="dark"] #chat-input::placeholder {
+    color: var(--secondary-text);
+    opacity: 0.9;
+}
+
 #send-button {
     background-color: var(--primary-color);
     border-radius: 50%;
@@ -328,7 +350,8 @@
 #send-button img {
     width: 18px;
     height: 18px;
-    filter: brightness(0) invert(1); /* 始终保持白色 */
+    filter: brightness(0) invert(1);
+    /* 始终保持白色 */
 }
 
 #send-button.disabled {
@@ -890,7 +913,7 @@ code {
     .message-content {
         max-width: 90%;
     }
-    
+
     .history-popup {
         width: 250px;
         right: 10px;
@@ -1076,6 +1099,7 @@ code {
         opacity: 0;
         transform: translateY(-10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -1091,8 +1115,15 @@ code {
 }
 
 @keyframes blink {
-    0%, 100% { opacity: 0.7; }
-    50% { opacity: 1; }
+
+    0%,
+    100% {
+        opacity: 0.7;
+    }
+
+    50% {
+        opacity: 1;
+    }
 }
 
 /* 刷新按钮高亮样式 */
@@ -1129,8 +1160,15 @@ code {
 }
 
 @keyframes bounce {
-    0%, 100% { transform: translateX(-50%) translateY(0); }
-    50% { transform: translateX(-50%) translateY(-5px); }
+
+    0%,
+    100% {
+        transform: translateX(-50%) translateY(0);
+    }
+
+    50% {
+        transform: translateX(-50%) translateY(-5px);
+    }
 }
 
 /* 页面信息容器相对定位，便于定位子元素 */

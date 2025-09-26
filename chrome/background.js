@@ -5,59 +5,52 @@ importScripts('../src/js/background/page-cache-listener.js');
 class BadgeManager {
     constructor() {
         this.diffCounts = {};
-        this.notificationDebounce = {};
         this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000);
     }
-    
+
     // 更新 Badge 计数
     async updateBadge(tabId, increment = 1) {
         const key = `badge_${tabId}`;
         const result = await chrome.storage.local.get([key]);
         let count = parseInt(result[key] || '0') + increment;
-        
+
         // 保存到 storage
         await chrome.storage.local.set({ [key]: count });
-        
+
         // 更新 UI
         await chrome.action.setBadgeText({
             tabId: tabId,
             text: count > 0 ? (count > 99 ? '99+' : count.toString()) : ''
         });
-        
+
         if (count > 0) {
             await chrome.action.setBadgeBackgroundColor({
-                tabId: tabId, 
+                tabId: tabId,
                 color: '#FF4D4F'
             });
         }
-        
+
         return count;
     }
-    
+
     // 清除 Badge
     async clearBadge(tabId) {
         const key = `badge_${tabId}`;
         await chrome.storage.local.remove(key);
-        
+
         await chrome.action.setBadgeText({
             tabId: tabId,
             text: ''
         });
-        
-        // 清除通知防抖状态
-        if (this.notificationDebounce[tabId]) {
-            clearTimeout(this.notificationDebounce[tabId]);
-            delete this.notificationDebounce[tabId];
-        }
     }
-    
+
     // 清理不存在的标签页
     async cleanup() {
         const tabs = await chrome.tabs.query({});
         const activeTabIds = new Set(tabs.map(t => t.id));
-        
+
         const allKeys = await chrome.storage.local.get(null);
-        
+
         for (const [key, value] of Object.entries(allKeys)) {
             if (key.startsWith('badge_')) {
                 const tabId = parseInt(key.split('_')[1]);
@@ -69,36 +62,7 @@ class BadgeManager {
     }
 }
 
-// 通知管理器
-class NotificationManager {
-    constructor() {
-        this.debounceMap = {};
-    }
-    
-    // 创建通知
-    async createNotification(tabId, title, diffCount) {
-        // 防抖处理
-        if (this.debounceMap[tabId]) {
-            clearTimeout(this.debounceMap[tabId]);
-        }
-        
-        this.debounceMap[tabId] = setTimeout(async () => {
-            try {
-                await chrome.notifications.create(`page-update-${tabId}`, {
-                    type: 'basic',
-                    iconUrl: 'assets/icon48.png',
-                    title: '页面有新内容',
-                    message: `${diffCount} 条新更新：${title}`,
-                    priority: 1
-                });
-            } catch (error) {
-                console.error('创建通知失败:', error);
-            } finally {
-                delete this.debounceMap[tabId];
-            }
-        }, 2000);
-    }
-}
+
 
 // 轮询管理器
 class PollingManager {
@@ -107,19 +71,19 @@ class PollingManager {
         this.lastHashes = {};
         this.pollInterval = null;
     }
-    
+
     // 启动轮询
     start() {
         if (this.pollInterval) return;
-        
+
         this.pollInterval = setInterval(async () => {
             try {
                 // 只检查活跃窗口的标签页
-                const tabs = await chrome.tabs.query({ 
-                    active: true, 
-                    currentWindow: true 
+                const tabs = await chrome.tabs.query({
+                    active: true,
+                    currentWindow: true
                 });
-                
+
                 for (const tab of tabs) {
                     await this.checkTab(tab);
                 }
@@ -128,25 +92,25 @@ class PollingManager {
             }
         }, this.interval);
     }
-    
+
     // 检查标签页内容变化
     async checkTab(tab) {
         try {
             // 只处理 http 和 https 页面
             if (!tab.url.startsWith('http')) return;
-            
+
             // 发送消息给内容脚本获取当前页面内容的哈希
-            const response = await chrome.tabs.sendMessage(tab.id, { 
-                action: 'getContentHash' 
+            const response = await chrome.tabs.sendMessage(tab.id, {
+                action: 'getContentHash'
             });
-            
+
             if (response && response.hash) {
                 const lastHash = this.lastHashes[tab.id];
-                
+
                 // 如果哈希值变化，触发内容变化事件
                 if (lastHash && lastHash !== response.hash) {
                     console.log(`[Polling] 检测到内容变化: ${tab.url}`);
-                    
+
                     // 触发内容变化事件
                     chrome.runtime.sendMessage({
                         action: 'pageDiff',
@@ -157,7 +121,7 @@ class PollingManager {
                         source: 'polling'
                     });
                 }
-                
+
                 // 更新最后已知的哈希值
                 this.lastHashes[tab.id] = response.hash;
             }
@@ -166,7 +130,7 @@ class PollingManager {
             delete this.lastHashes[tab.id];
         }
     }
-    
+
     // 停止轮询
     stop() {
         if (this.pollInterval) {
@@ -178,27 +142,12 @@ class PollingManager {
 
 // 初始化管理器
 const badgeManager = new BadgeManager();
-const notificationManager = new NotificationManager();
 const pollingManager = new PollingManager();
 
 // 启动轮询
 pollingManager.start();
 
-// 监听通知点击
-chrome.notifications.onClicked.addListener(async (notificationId) => {
-    if (notificationId.startsWith('page-update-')) {
-        const tabId = parseInt(notificationId.split('-')[2]);
-        if (!isNaN(tabId)) {
-            try {
-                await chrome.tabs.update(tabId, { active: true });
-                await badgeManager.clearBadge(tabId);
-                await chrome.notifications.clear(notificationId);
-            } catch (error) {
-                console.error('处理通知点击失败:', error);
-            }
-        }
-    }
-});
+
 
 // Set panel behavior to open on action click
 chrome.sidePanel
@@ -224,7 +173,7 @@ function loadChatHistory(tabId) {
 async function appendMessage(tabId, msg) {
     let list = await loadChatHistory(tabId);
     list.push(msg);
-    
+
     // 裁剪过长历史
     const MAX_MESSAGES_PER_TAB = 50;
     if (list.length > MAX_MESSAGES_PER_TAB) {
@@ -232,7 +181,7 @@ async function appendMessage(tabId, msg) {
         const others = list.filter(m => m.role !== 'system' && m.type !== 'summary');
         list = [...system, ...others.slice(-MAX_MESSAGES_PER_TAB + system.length)];
     }
-    
+
     saveChatHistory(tabId, list);
     return list;
 }
@@ -288,7 +237,7 @@ function loadSettings() {
             if (result.pageCache) {
                 pageCache = result.pageCache;
             }
-            
+
             // 加载结构化页面缓存
             if (result.structuredPageCache) {
                 structuredPageCache = result.structuredPageCache;
@@ -605,16 +554,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({ success: false, error: 'No tabId provided' });
             return true;
         }
-        
+
         chrome.storage.local.get(['pageCache'], (result) => {
             const pageCache = result.pageCache || {};
             const tabInfo = pageCache[tabId];
-            
+
             if (!tabInfo) {
                 sendResponse({ success: false, error: 'No page cache found for this tab' });
                 return;
             }
-            
+
             sendResponse({
                 success: true,
                 title: tabInfo.title || '',
@@ -630,17 +579,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const tabId = sender.tab ? sender.tab.id : null;
         if (tabId) {
             console.log('收到结构化页面内容:', request.url, request.structuredData);
-            
+
             // 更新结构化页面缓存
             structuredPageCache[tabId] = {
                 url: request.url,
                 structuredData: request.structuredData,
                 timestamp: request.timestamp || Date.now()
             };
-            
+
             // 保存到storage
             chrome.storage.local.set({ structuredPageCache });
-            
+
             // 发送响应
             if (sendResponse) {
                 sendResponse({ success: true });
@@ -848,10 +797,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     else if (request.action === 'fetchTranslation') {
         // 创建一个唯一的消息ID
         const messageId = Date.now().toString();
-        
+
         // 发送初始响应
         sendResponse({ messageId });
-        
+
         // 处理翻译请求
         fetchTranslationWithOpenAI(request.text, request.targetLang)
             .then(response => {
@@ -873,7 +822,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     error: error.message
                 });
             });
-        
+
         return true; // 保持消息通道打开
     }
     // 处理其他类型的请求
@@ -1034,17 +983,17 @@ async function fetchTranslationWithOpenAI(text, targetLang) {
     const result = await new Promise(resolve => {
         chrome.storage.local.get(['settings'], resolve);
     });
-    
+
     const settings = result.settings || defaultSettings;
     const apiKey = settings.openaiApiKey;
-    
+
     if (!apiKey) {
         throw new Error('OpenAI API Key is not configured');
     }
-    
+
     const baseUrl = settings.openaiBaseUrl || 'https://api.openai.com/v1';
     const model = settings.openaiCustomModel || settings.openaiModel || 'gpt-3.5-turbo';
-    
+
     // 语言代码映射
     const languageMap = {
         'en': 'English',
@@ -1063,9 +1012,9 @@ async function fetchTranslationWithOpenAI(text, targetLang) {
         'pt': 'Portuguese',
         'it': 'Italian'
     };
-    
+
     const targetLanguage = languageMap[targetLang] || targetLang;
-    
+
     try {
         const response = await fetch(`${baseUrl}/chat/completions`, {
             method: 'POST',
@@ -1089,19 +1038,19 @@ async function fetchTranslationWithOpenAI(text, targetLang) {
                 max_tokens: 2000
             })
         });
-        
+
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(`OpenAI API error: ${errorData.error?.message || 'Unknown error'}`);
         }
-        
+
         const data = await response.json();
         const translatedText = data.choices?.[0]?.message?.content?.trim();
-        
+
         if (!translatedText) {
             throw new Error('No translation received from OpenAI');
         }
-        
+
         return translatedText;
     } catch (error) {
         console.error('Translation error:', error);

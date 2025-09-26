@@ -193,7 +193,23 @@
 .placeholder {
     color: var(--text-secondary-color);
     font-style: italic;
-    opacity: 0.7;
+    opacity: 0.9;
+    /* 提高透明度，从 0.7 改为 0.9，让文字更清晰 */
+}
+
+/* 翻译输入框placeholder样式 */
+#source-text::placeholder {
+    color: var(--text-secondary-color);
+    opacity: 0.9;
+    /* 提高placeholder可见性 */
+    font-style: italic;
+}
+
+/* 确保暗色模式下翻译输入框placeholder也清晰可见 */
+[data-theme="dark"] #source-text::placeholder {
+    color: var(--text-secondary-color);
+    opacity: 0.9;
+    font-style: italic;
 }
 
 .translate-text-area .translate-actions {

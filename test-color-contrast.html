@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>颜色对比度测试</title>
+    <link rel="stylesheet" href="src/css/index.css">
+    <link rel="stylesheet" href="src/css/ai-chat.css">
+    <link rel="stylesheet" href="src/css/translate.css">
+    <link rel="stylesheet" href="src/css/settings.css">
+    <style>
+        .test-container {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+        
+        .test-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-color);
+            margin-bottom: 15px;
+        }
+        
+        .color-sample {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: var(--bg-color);
+            border-radius: 6px;
+        }
+        
+        .color-box {
+            width: 30px;
+            height: 30px;
+            border-radius: 4px;
+            margin-right: 15px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .color-info {
+            flex: 1;
+        }
+        
+        .color-name {
+            font-weight: 500;
+            color: var(--text-color);
+            margin-bottom: 2px;
+        }
+        
+        .color-value {
+            font-size: 12px;
+            color: var(--secondary-text);
+            font-family: monospace;
+        }
+        
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .input-test {
+            margin-bottom: 15px;
+        }
+        
+        .input-test input,
+        .input-test textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background-color: var(--input-bg);
+            color: var(--text-color);
+            font-size: 14px;
+        }
+        
+        .secondary-text-sample {
+            color: var(--secondary-text);
+            margin-bottom: 10px;
+        }
+        
+        .placeholder-sample {
+            color: var(--text-secondary-color);
+            opacity: 0.9;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" onclick="toggleTheme()">切换主题</button>
+    
+    <div class="test-container">
+        <h1 style="color: var(--text-color); text-align: center; margin-bottom: 30px;">
+            DAY 主题颜色对比度测试
+        </h1>
+        
+        <div class="test-section">
+            <div class="test-title">主要文字颜色</div>
+            
+            <div class="color-sample">
+                <div class="color-box" style="background-color: var(--text-color);"></div>
+                <div class="color-info">
+                    <div class="color-name">主文字颜色</div>
+                    <div class="color-value">var(--text-color): #1d1d1f</div>
+                </div>
+            </div>
+            
+            <div class="color-sample">
+                <div class="color-box" style="background-color: var(--secondary-text);"></div>
+                <div class="color-info">
+                    <div class="color-name">次要文字颜色 (已优化)</div>
+                    <div class="color-value">var(--secondary-text): #5a5a5e (原来: #8e8e93)</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <div class="test-title">文字可读性测试</div>
+            
+            <div style="color: var(--text-color); margin-bottom: 10px;">
+                这是主要文字颜色的示例文本，应该清晰易读。
+            </div>
+            
+            <div class="secondary-text-sample">
+                这是次要文字颜色的示例文本，现在应该比之前更清晰。
+            </div>
+            
+            <div class="placeholder-sample">
+                这是placeholder样式的示例文本，模拟输入框提示文字。
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <div class="test-title">输入框测试</div>
+            
+            <div class="input-test">
+                <label style="color: var(--text-color); display: block; margin-bottom: 5px;">
+                    聊天输入框:
+                </label>
+                <input type="text" placeholder="在这里输入您的消息...">
+            </div>
+            
+            <div class="input-test">
+                <label style="color: var(--text-color); display: block; margin-bottom: 5px;">
+                    翻译输入框:
+                </label>
+                <textarea placeholder="输入要翻译的文本..." rows="3"></textarea>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <div class="test-title">对比度改进说明</div>
+            
+            <div style="color: var(--text-color); line-height: 1.6;">
+                <h3 style="margin-bottom: 10px;">主要改进:</h3>
+                <ul style="margin-left: 20px;">
+                    <li>次要文字颜色从 <code style="background: var(--code-bg); padding: 2px 4px; border-radius: 3px;">#8e8e93</code> 
+                        调整为 <code style="background: var(--code-bg); padding: 2px 4px; border-radius: 3px;">#5a5a5e</code></li>
+                    <li>Placeholder 透明度从 0.7 提高到 0.9</li>
+                    <li>添加了统一的 CSS 变量别名，解决了变量不一致的问题</li>
+                    <li>为所有输入框添加了专门的 placeholder 样式</li>
+                    <li>确保暗色模式下的文字对比度也得到相应优化</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            
+            const button = document.querySelector('.theme-toggle');
+            button.textContent = newTheme === 'dark' ? '切换到浅色' : '切换到深色';
+        }
+        
+        // 初始化按钮文字
+        document.addEventListener('DOMContentLoaded', function() {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+            const button = document.querySelector('.theme-toggle');
+            button.textContent = currentTheme === 'dark' ? '切换到浅色' : '切换到深色';
+        });
+    </script>
+</body>
+</html>

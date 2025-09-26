@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Chrome Side Reader Assistant",
+  "version": "1.0.5",
+  "description": "A Chrome extension for AI-powered reading assistance",
+  "action": {
+    "default_title": "Chrome Side Reader Assistant"
+  },
+  "side_panel": {
+    "default_path": "src/index.html"
+  },
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "tabs"
+  ],
+  "background": {
+    "service_worker": "chrome/background.js"
+  },
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  }
+}
