@@ -4,7 +4,7 @@ import { loadSettings } from './modules/settings.js';
 import { loadTranslate } from './modules/translate.js';
 import { addCopyListeners } from './utils/copy-utils.js';
 import { initI18n, updateDomTexts } from './utils/i18n.js';
-import { getSettings } from './services/ollama-service.js';
+import { getSettings } from './config/settings.js';
 
 // Global state
 let i18nInitialized = false;

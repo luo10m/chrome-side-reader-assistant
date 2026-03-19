@@ -43,4 +43,16 @@ export async function updateSetting(key, value) {
     const settings = await getSettings();
     settings[key] = value;
     return updateSettings(settings);
+}
+
+// 获取当前活动系统提示词
+export async function getActiveSystemPrompt() {
+    const settings = await getSettings();
+    if (settings && settings.activePromptId && settings.systemPrompts) {
+        const activePrompt = settings.systemPrompts.find(p => p.id === settings.activePromptId);
+        if (activePrompt) {
+            return activePrompt.content;
+        }
+    }
+    return settings?.systemPrompt || 'You are a helpful assistant.';
 } 

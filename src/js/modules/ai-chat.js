@@ -1,8 +1,10 @@
 // Import the API service and markdown renderer
-import { sendMessageToOllama, getSettings, getActiveSystemPrompt } from '../services/ollama-service.js';
+import { getSettings, getActiveSystemPrompt } from '../config/settings.js';
 import { sendMessageToOpenAI, parseOpenAIStreamingResponse } from '../services/openai-service.js';
 import { renderMarkdown } from '../utils/markdown-renderer.js';
+import { getRichMediaRenderer } from '../renderers/twitter-renderer.js';
 import { t } from '../utils/i18n.js';
+import { safeSendMessage } from '../utils/message-client.js';
 import { MAX_MESSAGES_PER_TAB, MAX_HISTORY_IN_CONTEXT } from '../constants.js';
 
 // Load AI Chat
@@ -107,7 +109,7 @@ export function loadAIChat(container) {
                 refreshPageContentButton.disabled = false;
 
                 // 检查是否有页面缓存（仅用于日志记录）
-                chrome.runtime.sendMessage({ action: 'getSettings' }, (settings) => {
+                safeSendMessage({ action: 'getSettings' }, (settings) => {
                     chrome.storage.local.get(['pageCache'], (result) => {
                         const pageCache = result.pageCache || {};
                         const tabInfo = pageCache[tabId];
@@ -147,116 +149,7 @@ export function loadAIChat(container) {
         startSummarize();
     }
     
-    // 新增：渲染Twitter富媒体内容
-    function renderTwitterContent(tabInfo) {
-        if (!tabInfo || !tabInfo.isTwitter || !tabInfo.richData) {
-            return null;
-        }
-        
-        // 创建富媒体容器
-        const richMediaContainer = document.createElement('div');
-        richMediaContainer.className = 'twitter-rich-content';
-        
-        // 添加作者信息（如果有）
-        if (tabInfo.author) {
-            const authorElement = document.createElement('div');
-            authorElement.className = 'twitter-author';
-            authorElement.textContent = tabInfo.author;
-            richMediaContainer.appendChild(authorElement);
-        }
-        
-        // 添加HTML格式的推文内容（如果有）
-        if (tabInfo.richData.html) {
-            const contentElement = document.createElement('div');
-            contentElement.className = 'twitter-text';
-            contentElement.innerHTML = tabInfo.richData.html;
-            richMediaContainer.appendChild(contentElement);
-        }
-        
-        // 添加图片（如果有）
-        if (tabInfo.richData.images && tabInfo.richData.images.length > 0) {
-            const imagesContainer = document.createElement('div');
-            imagesContainer.className = 'twitter-images';
-            
-            // 根据图片数量设置不同的布局类
-            imagesContainer.classList.add(`image-count-${Math.min(tabInfo.richData.images.length, 4)}`);
-            
-            tabInfo.richData.images.forEach(imgSrc => {
-                const imgWrapper = document.createElement('div');
-                imgWrapper.className = 'image-wrapper';
-                
-                const img = document.createElement('img');
-                img.src = imgSrc;
-                img.alt = 'Tweet image';
-                img.loading = 'lazy';
-                
-                // 添加点击放大功能
-                img.addEventListener('click', () => {
-                    const modal = document.createElement('div');
-                    modal.className = 'image-modal';
-                    modal.innerHTML = `
-                        <div class="modal-content">
-                            <img src="${imgSrc}" alt="Full size image">
-                            <button class="close-modal">×</button>
-                        </div>
-                    `;
-                    document.body.appendChild(modal);
-                    
-                    // 关闭模态框
-                    modal.querySelector('.close-modal').addEventListener('click', () => {
-                        modal.remove();
-                    });
-                    
-                    // 点击背景关闭
-                    modal.addEventListener('click', (e) => {
-                        if (e.target === modal) {
-                            modal.remove();
-                        }
-                    });
-                });
-                
-                imgWrapper.appendChild(img);
-                imagesContainer.appendChild(imgWrapper);
-            });
-            
-            richMediaContainer.appendChild(imagesContainer);
-        }
-        
-        // 添加视频（如果有）
-        if (tabInfo.richData.videos && tabInfo.richData.videos.length > 0) {
-            const videosContainer = document.createElement('div');
-            videosContainer.className = 'twitter-videos';
-            
-            tabInfo.richData.videos.forEach(videoSrc => {
-                if (videoSrc) {
-                    const videoElement = document.createElement('video');
-                    videoElement.controls = true;
-                    videoElement.src = videoSrc;
-                    videoElement.className = 'twitter-video';
-                    videosContainer.appendChild(videoElement);
-                }
-            });
-            
-            richMediaContainer.appendChild(videosContainer);
-        }
-        
-        // 添加推文链接
-        if (tabInfo.url) {
-            const linkContainer = document.createElement('div');
-            linkContainer.className = 'twitter-link';
-            
-            const link = document.createElement('a');
-            link.href = tabInfo.url;
-            link.target = '_blank';
-            link.rel = 'noopener noreferrer';
-            link.textContent = '查看原始推文';
-            
-            linkContainer.appendChild(link);
-            richMediaContainer.appendChild(linkContainer);
-        }
-        
-        return richMediaContainer;
-    }
+    // 移除原始硬编码的 renderTwitterContent 逻辑，统一委托给 renderer registry 模式处理
 
     // 新增：开始摘要 - 更新以支持页面级别独立聊天并检查OpenAI设置
     function startSummarize() {
@@ -308,8 +201,8 @@ export function loadAIChat(container) {
                 const twitterContentContainer = document.createElement('div');
                 twitterContentContainer.className = 'twitter-content-container';
                 
-                // 渲染Twitter富媒体内容
-                const richContent = renderTwitterContent(tabInfo);
+                // 渲染特定网站富媒体内容
+                const richContent = getRichMediaRenderer(tabInfo);
                 if (richContent) {
                     twitterContentContainer.appendChild(richContent);
                     
@@ -331,7 +224,7 @@ export function loadAIChat(container) {
             }
             
             // 发送摘要请求，包含当前标签页ID
-            chrome.runtime.sendMessage({
+            safeSendMessage({
                 action: 'summarizePage',
                 tabId: currentTabId
             }, (response) => {
@@ -555,9 +448,7 @@ export function loadAIChat(container) {
         if (role === 'assistant') {
             // 获取当前使用的模型
             getSettings().then(settings => {
-                const modelName = settings.defaultAI === 'openai'
-                    ? (settings.openaiModel || 'gpt-3.5-turbo')
-                    : (settings.ollamaModel || 'llama2');
+                const modelName = settings.openaiModel || 'gpt-3.5-turbo';
 
                 // 设置模型属性用于CSS显示
                 messageElement.setAttribute('data-model', modelName);
@@ -647,7 +538,7 @@ export function loadAIChat(container) {
             const [{ id: tabId }] = await chrome.tabs.query({ active: true, currentWindow: true });
             
             // 1. 写入user消息到历史
-            await chrome.runtime.sendMessage({
+            await safeSendMessage({
                 action: 'appendChatMessage',
                 tabId,
                 message: {
@@ -662,13 +553,13 @@ export function loadAIChat(container) {
             addMessageToUI('user', userMessage);
             
             // 2. 拉取完整历史
-            const { list } = await chrome.runtime.sendMessage({
+            const { list } = await safeSendMessage({
                 action: 'getChatHistory',
                 tabId
             });
             
             // 3. 取得页面摘要
-            const ctx = await chrome.runtime.sendMessage({
+            const ctx = await safeSendMessage({
                 action: 'getPageContext',
                 tabId
             });
@@ -678,7 +569,6 @@ export function loadAIChat(container) {
             
             // 获取设置
             const settings = await getSettings();
-            const provider = settings.defaultAI || 'ollama';
             
             // 4. 组装发送给模型的messages
             // 使用从constants.js导入的MAX_HISTORY_IN_CONTEXT
@@ -711,35 +601,27 @@ export function loadAIChat(container) {
             let response;
             let fullText = '';
             
-            if (provider === 'openai') {
-                // 检查是否有API密钥
-                if (!settings.openaiApiKey) {
-                    contentElement.innerHTML = '请在设置中配置OpenAI API密钥';
-                    setTimeout(() => {
-                        openSettings();
-                    }, 1000);
-                    return;
-                }
-                
-                // 使用OpenAI
-                response = await sendMessageToOpenAI(userMessage, messages, systemPrompt);
-                
-                // 处理OpenAI的流式响应
-                if (response.streaming) {
-                    await handleStreamingResponse(response.reader, response.decoder, updateStreamingMessage, userMessage);
-                    return; // 流式响应会自行处理UI更新
-                }
-            } else {
-                // 使用Ollama
-                response = await sendMessageToOllama(userMessage, messages, (chunk, done, full) => {
-                    updateStreamingMessage(chunk, full, done);
-                    fullText = full;
-                });
+            // 检查是否有API密钥
+            if (!settings.openaiApiKey) {
+                contentElement.innerHTML = '请在设置中配置OpenAI API密钥';
+                setTimeout(() => {
+                    openSettings();
+                }, 1000);
+                return;
+            }
+            
+            // 使用OpenAI
+            response = await sendMessageToOpenAI(userMessage, messages, systemPrompt);
+            
+            // 处理OpenAI的流式响应
+            if (response.streaming) {
+                await handleStreamingResponse(response.reader, response.decoder, updateStreamingMessage, userMessage);
+                return; // 流式响应会自行处理UI更新
             }
             
             // 6. 流式结束后，写入assistant消息
             if (fullText) {
-                await chrome.runtime.sendMessage({
+                await safeSendMessage({
                     action: 'appendChatMessage',
                     tabId,
                     message: {
@@ -967,6 +849,12 @@ export function loadAIChat(container) {
         } else if (message.action === 'pageNavigated') {
             // 检查是否是当前标签页
             if (message.tabId === currentTabId) {
+                // 防抖/护垫：如果正在生成摘要，或者后台明确表示没有新内容，拒绝打断当前对话状态
+                if (isSummarizing || message.hasNewContent === false) {
+                    console.log('Ignore pageNavigated event to protect UI state.');
+                    return;
+                }
+
                 console.log('Current page navigated:', message.newUrl);
 
                 // 添加页面切换通知

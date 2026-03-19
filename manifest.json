@@ -21,7 +21,8 @@
     "clipboardWrite",
     "tabs",
     "notifications",
-    "alarms"
+    "alarms",
+    "webNavigation"
   ],
   "host_permissions": [
     "http://localhost/*",
@@ -31,7 +32,8 @@
     "https://api.openai.com/*"
   ],
   "background": {
-    "service_worker": "chrome/background.js"
+    "service_worker": "chrome/background.js",
+    "type": "module"
   },
   "commands": {
     "_execute_action": {
@@ -55,6 +57,7 @@
       "js": [
         "lib/JSDOMParser.js",
         "lib/Readability.js",
+        "lib/defuddle.js",
         "src/js/site-adapters.js",
         "src/js/content-script.js",
         "src/js/content/extractor.js"

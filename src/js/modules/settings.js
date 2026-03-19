@@ -1,4 +1,4 @@
-import { getSettings, updateSettings } from '../services/ollama-service.js';
+import { getSettings, updateSettings } from '../config/settings.js';
 import { t, getCurrentLanguage, loadLanguage, getAvailableLanguages } from '../utils/i18n.js';
 
 // Load settings
@@ -37,7 +37,6 @@ export async function loadSettings(container) {
             
             <div class="settings-tabs">
                 <button class="tab-button active" data-tab="general" data-i18n="settings.tabs.general">General</button>
-                <button class="tab-button" data-tab="ollama" data-i18n="settings.tabs.ollama">Ollama</button>
                 <button class="tab-button" data-tab="openai" data-i18n="settings.tabs.openai">OpenAI</button>
                 <button class="tab-button" data-tab="system-prompt" data-i18n="settings.tabs.systemPrompt">System Prompt</button>
             </div>
@@ -69,9 +68,8 @@ export async function loadSettings(container) {
                             <div class="settings-item">
                                 <label for="default-ai-select" data-i18n="settings.sections.defaultAI.label">Default AI Provider</label>
                                 <div class="settings-control">
-                                    <select id="default-ai-select">
-                                        <option value="ollama" ${settings.defaultAI === 'ollama' ? 'selected' : ''} data-i18n="settings.sections.defaultAI.options.ollama">Ollama</option>
-                                        <option value="openai" ${settings.defaultAI === 'openai' ? 'selected' : ''} data-i18n="settings.sections.defaultAI.options.openai">OpenAI</option>
+                                    <select id="default-ai-select" disabled>
+                                        <option value="openai" selected data-i18n="settings.sections.defaultAI.options.openai">OpenAI</option>
                                     </select>
                                 </div>
                             </div>
@@ -82,56 +80,6 @@ export async function loadSettings(container) {
                                 <span data-i18n="settings.sections.appearance.loadLastChat">Load last chat on startup</span>
                             </label>
                         </div>
-                    </div>
-                </div>
-                
-                <!-- Ollama Tab -->
-                <div class="tab-content" id="ollama-tab">
-                    <div class="settings-section">
-                        <h3 data-i18n="settings.sections.ollama.title">Ollama Settings</h3>
-                        <div class="settings-item">
-                            <label data-i18n="settings.sections.ollama.url.label">Ollama URL</label>
-                            <div class="url-input-container">
-                                <div class="url-part">
-                                    <label for="ollama-host" class="small-label" data-i18n="settings.sections.ollama.url.host">Host</label>
-                                    <input type="text" id="ollama-host" placeholder="http://192.168.5.99">
-                                </div>
-                                <div class="url-part small">
-                                    <label for="ollama-port" class="small-label" data-i18n="settings.sections.ollama.url.port">Port</label>
-                                    <input type="text" id="ollama-port" placeholder="11434">
-                                </div>
-                                <div class="url-part">
-                                    <label for="ollama-path" class="small-label" data-i18n="settings.sections.ollama.url.path">Path</label>
-                                    <input type="text" id="ollama-path" placeholder="/api/generate">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="settings-item">
-                            <label for="ollama-model" data-i18n="settings.sections.ollama.model.label">Ollama Model</label>
-                            <div class="model-select-container">
-                                <select id="ollama-model" disabled>
-                                    <option value="" data-i18n="settings.sections.ollama.model.loading">Loading models...</option>
-                                </select>
-                                <button id="refresh-models" class="icon-button" data-i18n-title="settings.buttons.refresh">
-                                    <img src="assets/svg/refresh.svg" alt="Refresh" class="button-icon">
-                                </button>
-                            </div>
-                        </div>
-                        <div class="settings-item">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="use-proxy">
-                                <span data-i18n="settings.sections.ollama.proxy">Use CORS proxy (try this if you get 403 errors)</span>
-                            </label>
-                        </div>
-                        <div class="settings-item">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="use-streaming" checked>
-                                <span data-i18n="settings.sections.ollama.streaming">Enable streaming responses</span>
-                            </label>
-                        </div>
-                        <button id="test-connection" class="settings-button" data-i18n="settings.buttons.testConnection">Test Connection</button>
-                        <button id="test-api" class="settings-button" data-i18n="settings.buttons.testApi">Test API</button>
-                        <div id="connection-status" class="connection-status"></div>
                     </div>
                 </div>
                 
@@ -214,20 +162,11 @@ export async function loadSettings(container) {
         });
     });
 
-    // Get DOM elements
-    const ollamaHostInput = document.getElementById('ollama-host');
-    const ollamaPortInput = document.getElementById('ollama-port');
-    const ollamaPathInput = document.getElementById('ollama-path');
-    const ollamaModelSelect = document.getElementById('ollama-model');
-    const refreshModelsButton = document.getElementById('refresh-models');
+    const refreshModelsButton = document.getElementById('refresh-openai-models');
     const themeSelect = document.getElementById('theme-select');
     const languageSelect = document.getElementById('language-select');
-    const testConnectionButton = document.getElementById('test-connection');
-    const connectionStatus = document.getElementById('connection-status');
+    const connectionStatus = document.getElementById('openai-connection-status');
     const saveSettingsButton = document.getElementById('save-settings');
-    const useProxyCheckbox = document.getElementById('use-proxy');
-    const testApiButton = document.getElementById('test-api');
-    const useStreamingCheckbox = document.getElementById('use-streaming');
     const systemPromptTextarea = document.getElementById('system-prompt');
     const resetSettingsButton = document.getElementById('reset-settings');
     const loadLastChatCheckbox = document.getElementById('load-last-chat-checkbox');
@@ -243,35 +182,8 @@ export async function loadSettings(container) {
 
     // Load current settings
     getSettings().then(settings => {
-        // Parse URL
-        if (settings.ollamaUrl) {
-            try {
-                const url = new URL(settings.ollamaUrl);
-                ollamaHostInput.value = `${url.protocol}//${url.hostname}`;
-                ollamaPortInput.value = url.port || '11434';
-                ollamaPathInput.value = url.pathname || '/api/generate';
-            } catch (e) {
-                // If URL parsing fails, use default values
-                ollamaHostInput.value = 'http://192.168.5.99';
-                ollamaPortInput.value = '11434';
-                ollamaPathInput.value = '/api/generate';
-            }
-        } else {
-            ollamaHostInput.value = 'http://192.168.5.99';
-            ollamaPortInput.value = '11434';
-            ollamaPathInput.value = '/api/generate';
-        }
-
         themeSelect.value = settings.theme || 'light';
-        useProxyCheckbox.checked = settings.useProxy || false;
-        useStreamingCheckbox.checked = settings.useStreaming !== false;
         loadLastChatCheckbox.checked = settings.loadLastChat !== false;
-
-        // Build full URL
-        const fullUrl = `${ollamaHostInput.value}:${ollamaPortInput.value}${ollamaPathInput.value}`;
-
-        // Load model list
-        fetchModelList(fullUrl, useProxyCheckbox.checked, settings.ollamaModel);
 
         // 初始化系统提示词卡片功能
         initSystemPrompts(settings);
@@ -280,23 +192,7 @@ export async function loadSettings(container) {
         document.getElementById('default-ai-select').value = settings.defaultAI || 'ollama';
     });
 
-    // When URL parts change, refresh model list
-    function updateModelListFromUrlChange() {
-        const fullUrl = `${ollamaHostInput.value}:${ollamaPortInput.value}${ollamaPathInput.value}`;
-        const currentModel = ollamaModelSelect.value;
-        fetchModelList(fullUrl, useProxyCheckbox.checked, currentModel);
-    }
 
-    ollamaHostInput.addEventListener('change', updateModelListFromUrlChange);
-    ollamaPortInput.addEventListener('change', updateModelListFromUrlChange);
-    ollamaPathInput.addEventListener('change', updateModelListFromUrlChange);
-
-    // Refresh model list button
-    refreshModelsButton.addEventListener('click', () => {
-        // Save current selected model
-        const currentModel = ollamaModelSelect.value;
-        fetchModelList(ollamaHostInput.value + ':' + ollamaPortInput.value + ollamaPathInput.value, useProxyCheckbox.checked, currentModel);
-    });
 
     // 检查是否为 OpenAI 兼容 API
     function isOpenAICompatibleUrl(url) {
@@ -337,171 +233,7 @@ export async function loadSettings(container) {
         return data.data || [];
     }
 
-    // 获取 Ollama 模型列表
-    async function fetchOllamaModels(url, useProxy) {
-        try {
-            let modelListUrl = url.replace('/api/chat', '').replace('/api/generate', '');
-            if (!modelListUrl.endsWith('/')) {
-                modelListUrl += '/';
-            }
-            modelListUrl += 'api/tags';
 
-            if (useProxy) {
-                modelListUrl = `https://cors-anywhere.herokuapp.com/${modelListUrl}`;
-            }
-
-            console.log(`Fetching Ollama models from: ${modelListUrl}`);
-            
-            const response = await fetch(modelListUrl, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json',
-                    'Cache-Control': 'no-cache'
-                },
-                // 添加超时处理
-                signal: AbortSignal.timeout(5000) // 5秒超时
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.warn(`Failed to fetch Ollama models: ${response.status} ${errorText}`);
-                return [];
-            }
-
-            const data = await response.json();
-            console.log('Successfully fetched Ollama models:', data.models || []);
-            return data.models || [];
-        } catch (error) {
-            // 记录错误但不抛出，返回空数组
-            if (error.name === 'AbortError') {
-                console.warn('Fetching Ollama models timed out after 5 seconds');
-            } else if (error.message && error.message.includes('Failed to fetch')) {
-                console.warn('Failed to connect to Ollama server. Please check if the service is running and the URL is correct.');
-            } else {
-                console.warn('Error fetching Ollama models:', error);
-            }
-            return [];
-        }
-    }
-
-    // Fetch model list
-    async function fetchModelList(url, useProxy, selectedModel) {
-        if (!url) {
-            ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.placeholder')}</option>`;
-            ollamaModelSelect.disabled = true;
-            return;
-        }
-
-        // Save current selected model (if any)
-        const currentSelectedModel = ollamaModelSelect.value || selectedModel;
-
-        ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.loading')}</option>`;
-        ollamaModelSelect.disabled = true;
-
-        try {
-            const isOpenAI = isOpenAICompatibleUrl(url);
-            const openaiApiKey = document.getElementById('openai-api-key')?.value.trim() || '';
-
-            let models = [];
-            console.log('Fetching model list from:', url);
-
-            if (isOpenAI) {
-                // Handle OpenAI compatible API
-                if (!openaiApiKey) {
-                    throw new Error('OpenAI API key is required');
-                }
-                
-                models = await fetchOpenAIModels(openaiApiKey, url, useProxy);
-                
-                // Add default models if none returned
-                if (models.length === 0) {
-                    models = [
-                        { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' },
-                        { id: 'gpt-4', name: 'GPT-4' },
-                        { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' }
-                    ];
-                }
-            } else {
-                // Handle Ollama API
-                models = await fetchOllamaModels(url, useProxy);
-            }
-
-            // Clear and populate model select
-            ollamaModelSelect.innerHTML = '';
-
-            if (models.length === 0) {
-                const option = document.createElement('option');
-                option.value = '';
-                option.textContent = t('settings.sections.ollama.model.empty');
-                ollamaModelSelect.appendChild(option);
-            } else {
-                // Add empty option
-                const emptyOption = document.createElement('option');
-                emptyOption.value = '';
-                emptyOption.textContent = t('settings.sections.ollama.model.placeholder');
-                ollamaModelSelect.appendChild(emptyOption);
-
-                // Add models
-                models.forEach(model => {
-                    const option = document.createElement('option');
-                    option.value = model.name || model.id;
-                    
-                    // 显示模型名称和大小（如果有）
-                    if (model.size !== undefined) {
-                        option.textContent = `${model.name || model.id} (${formatSize(model.size)})`;
-                    } else {
-                        option.textContent = model.name || model.id;
-                    }
-                    
-                    // Select the previously selected model if it exists
-                    if (currentSelectedModel && 
-                        (model.name === currentSelectedModel || 
-                         model.id === currentSelectedModel ||
-                         option.value === currentSelectedModel)) {
-                        option.selected = true;
-                    }
-                    
-                    ollamaModelSelect.appendChild(option);
-                });
-
-                // Try to restore previously selected model if not already selected
-                if (currentSelectedModel && !ollamaModelSelect.value && 
-                    ollamaModelSelect.querySelector(`option[value="${currentSelectedModel}"]`)) {
-                    ollamaModelSelect.value = currentSelectedModel;
-                }
-
-                ollamaModelSelect.disabled = false;
-            }
-        } catch (error) {
-            console.error('Error fetching model list:', error);
-
-            let errorMessage = '';
-
-            // 提供更具体的错误信息
-            if (error instanceof DOMException) {
-                if (error.name === 'AbortError') {
-                    errorMessage = '请求超时，请检查 Ollama 服务是否正在运行';
-                } else {
-                    errorMessage = `${error.name}: ${error.message}`;
-                }
-            } else if (error.name === 'AbortError') {
-                errorMessage = '请求超时，请检查 Ollama 服务是否正在运行';
-            } else if (error.message && error.message.includes('Failed to fetch')) {
-                errorMessage = '无法连接到 Ollama 服务，请检查 URL 和网络连接';
-            } else if (error.message && error.message.includes('NetworkError') || 
-                      error.message && error.message.includes('Failed to execute')) {
-                errorMessage = '网络错误，请检查服务是否正在运行，或尝试启用代理';
-            } else if (error.message) {
-                errorMessage = error.message;
-            } else {
-                errorMessage = '连接服务器时出错，请检查网络和服务器状态';
-            }
-
-            const errorPrefix = isOpenAICompatibleUrl(url) ? 'OpenAI' : 'Ollama';
-            ollamaModelSelect.innerHTML = `<option value="">${t('settings.sections.ollama.model.error')} (${errorPrefix}): ${errorMessage}</option>`;
-            ollamaModelSelect.disabled = true;
-        }
-    }
 
     // Format model size
     function formatSize(bytes) {
@@ -549,123 +281,7 @@ export async function loadSettings(container) {
         return await response.json();
     }
 
-    // 测试 Ollama 连接
-    async function testOllamaConnection(baseUrl, useProxy) {
-        let testUrl = baseUrl;
-        if (!testUrl.includes('/api/version')) {
-            testUrl = testUrl.replace(/\/$/, '') + '/api/version';
-        }
 
-        if (useProxy) {
-            testUrl = `https://cors-anywhere.herokuapp.com/${testUrl}`;
-        }
-
-        const response = await fetch(testUrl, {
-            method: 'GET'
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            const error = new Error(`API request failed with status ${response.status}: ${errorText}`);
-            error.status = response.status;
-            throw error;
-        }
-
-        return await response.json();
-    }
-
-    // Test connection
-    testConnectionButton.addEventListener('click', async () => {
-        connectionStatus.textContent = t('settings.status.testing');
-        connectionStatus.className = 'connection-status testing';
-
-        const fullUrl = `${ollamaHostInput.value}:${ollamaPortInput.value}${ollamaPathInput.value}`;
-        const isOpenAI = isOpenAICompatibleUrl(fullUrl);
-        const openaiApiKey = document.getElementById('openai-api-key')?.value.trim() || '';
-
-        try {
-            if (isOpenAI) {
-                if (!openaiApiKey) {
-                    throw new Error('OpenAI API key is required');
-                }
-                await testOpenAIConnection(openaiApiKey, fullUrl, useProxyCheckbox.checked);
-                connectionStatus.textContent = t('settings.status.openai.success');
-                connectionStatus.className = 'connection-status success';
-            } else {
-                const data = await testOllamaConnection(fullUrl, useProxyCheckbox.checked);
-                connectionStatus.textContent = t('settings.status.success', { version: data.version });
-                connectionStatus.className = 'connection-status success';
-            }
-
-            // 刷新模型列表
-            const currentModel = ollamaModelSelect.value;
-            fetchModelList(fullUrl, useProxyCheckbox.checked, currentModel);
-        } catch (error) {
-            console.error('Connection test failed:', error);
-            
-            let errorMessage = error.message;
-            if (error.status === 401) {
-                errorMessage = 'API 密钥无效，请检查您的 API 密钥';
-            } else if (error.status === 404) {
-                errorMessage = 'API 端点不存在，请检查 URL 是否正确';
-            } else if (error.status === 429) {
-                errorMessage = '请求过于频繁，请稍后再试';
-            } else if (error.message && error.message.includes('Failed to fetch')) {
-                errorMessage = '无法连接到服务，请检查 URL 和网络连接';
-            }
-
-            const errorPrefix = isOpenAI ? 'OpenAI' : 'Ollama';
-            connectionStatus.textContent = `${t('settings.status.error')} (${errorPrefix}): ${errorMessage}`;
-            connectionStatus.className = 'connection-status error';
-        }
-    });
-
-    // Test API
-    testApiButton.addEventListener('click', async () => {
-        connectionStatus.textContent = t('settings.status.apiTesting');
-        connectionStatus.className = 'connection-status testing';
-
-        try {
-            let apiUrl = ollamaHostInput.value + ':' + ollamaPortInput.value + ollamaPathInput.value;
-            const model = ollamaModelSelect.value;
-
-            if (!model) {
-                connectionStatus.textContent = t('settings.status.selectModel');
-                connectionStatus.className = 'connection-status error';
-                return;
-            }
-
-            // If proxy is enabled, use CORS proxy
-            if (useProxyCheckbox.checked) {
-                apiUrl = `https://cors-anywhere.herokuapp.com/${apiUrl}`;
-            }
-
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: model,
-                    prompt: "Hello, how are you?",
-                    stream: false
-                })
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                connectionStatus.textContent = t('settings.status.apiSuccess', { response: data.response || JSON.stringify(data) });
-                connectionStatus.className = 'connection-status success';
-            } else {
-                const errorText = await response.text();
-                connectionStatus.textContent = t('settings.status.apiError', { error: `${response.status} ${response.statusText} - ${errorText}` });
-                connectionStatus.className = 'connection-status error';
-            }
-        } catch (error) {
-            connectionStatus.textContent = t('settings.status.apiError', { error: error.message });
-            connectionStatus.className = 'connection-status error';
-        }
-    });
 
     // Show notification message
     function showNotification(container, message, type = 'success') {
@@ -689,18 +305,10 @@ export async function loadSettings(container) {
 
     // Save settings
     saveSettingsButton.addEventListener('click', async () => {
-        // Build full URL
-        const fullUrl = `${ollamaHostInput.value}:${ollamaPortInput.value}${ollamaPathInput.value}`;
-
         const newSettings = {
-            ollamaUrl: fullUrl,
-            ollamaModel: ollamaModelSelect.value,
             theme: themeSelect.value,
             language: languageSelect.value,
-            useProxy: useProxyCheckbox.checked,
-            useStreaming: useStreamingCheckbox.checked,
             loadLastChat: loadLastChatCheckbox.checked,
-            // systemPrompt: systemPromptTextarea.value,
             defaultAI: document.getElementById('default-ai-select').value,
             openaiApiKey: document.getElementById('openai-api-key').value.trim(),
             openaiBaseUrl: document.getElementById('openai-base-url').value.trim(),
@@ -751,34 +359,16 @@ export async function loadSettings(container) {
 
                 // 不重新加载页面，而是更新当前页面的设置
                 if (resetSettings) {
-                    // 更新 URL 输入框
-                    try {
-                        const url = new URL(resetSettings.ollamaUrl);
-                        ollamaHostInput.value = `${url.protocol}//${url.hostname}`;
-                        ollamaPortInput.value = url.port || '11434';
-                        ollamaPathInput.value = url.pathname || '/api/generate';
-                    } catch (e) {
-                        ollamaHostInput.value = 'http://192.168.5.99';
-                        ollamaPortInput.value = '11434';
-                        ollamaPathInput.value = '/api/generate';
-                    }
-
                     // 更新其他设置
                     themeSelect.value = resetSettings.theme || 'light';
                     languageSelect.value = resetSettings.language || 'en';
-                    useProxyCheckbox.checked = resetSettings.useProxy || false;
-                    useStreamingCheckbox.checked = resetSettings.useStreaming !== false;
                     loadLastChatCheckbox.checked = resetSettings.loadLastChat !== false;
                     systemPromptTextarea.value = resetSettings.systemPrompt || '';
-                    defaultAI.value = resetSettings.defaultAI || 'ollama';
+                    defaultAI.value = resetSettings.defaultAI || 'openai';
                     openaiApiKey.value = resetSettings.openaiApiKey || '';
                     openaiBaseUrl.value = resetSettings.openaiBaseUrl || 'https://api.openai.com/v1';
                     openaiModelSelect.value = resetSettings.openaiModel || 'gpt-3.5-turbo';
                     openaiCustomModel.value = resetSettings.openaiCustomModel || '';
-
-                    // 更新模型列表
-                    const fullUrl = `${ollamaHostInput.value}:${ollamaPortInput.value}${ollamaPathInput.value}`;
-                    fetchModelList(fullUrl, useProxyCheckbox.checked, resetSettings.ollamaModel);
 
                     // 应用主题
                     document.documentElement.setAttribute('data-theme', resetSettings.theme);

@@ -1,5 +1,5 @@
 // OpenAI API Service
-import { getSettings } from './ollama-service.js';
+import { getSettings } from '../config/settings.js';
 
 // Send message to OpenAI
 export async function sendMessageToOpenAI(message, history = [], systemPrompt = null, callback = null) {
