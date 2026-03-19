@@ -208,6 +208,29 @@ function extractPageText() {
         // 更新当前URL
         currentPageUrl = url;
         
+        // 针对小红书进行专用正文提取
+        if (url.includes('xiaohongshu.com/explore')) {
+            console.log('应用小红书专用提取规则');
+            const noteTitle = document.querySelector('#detail-title, .title')?.innerText || '';
+            const noteDesc = document.querySelector('#detail-desc, .desc')?.innerText || '';
+            const author = document.querySelector('.username, .name')?.innerText || '';
+            
+            // 如果成功抓取到了核心节点
+            if (noteTitle || noteDesc) {
+                const combinedText = `作者: ${author}\n标题: ${noteTitle}\n内容: ${noteDesc}`;
+                console.log('小红书正文提取成功:', combinedText.substring(0, 50));
+                
+                safeSendMessage({
+                    action: 'pageContent',
+                    url: url,
+                    title: title,
+                    content: combinedText,
+                    timestamp: Date.now()
+                });
+                return;
+            }
+        }
+        
         // 双轨并行设计: 尝试使用UGC提取器进行结构化提取
         console.log('尝试使用UGC提取器进行结构化提取...');
         const structuredData = extractStructuredData();

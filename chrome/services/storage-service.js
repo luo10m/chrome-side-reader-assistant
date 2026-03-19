@@ -72,6 +72,33 @@ export function updateStructuredPageCache(tabId, data) {
 
 export function upsertPageCache(tabId, url, title, content) {
     if (!tabId) return;
+    
+    const previousUrl = pageCache[tabId] ? pageCache[tabId].url : null;
+    const isNewUrl = previousUrl && previousUrl !== url && previousUrl !== 'about:blank';
+    
+    if (isNewUrl) {
+        console.log(`Tab ${tabId} URL changed from ${previousUrl} to ${url}. Clearing old chats.`);
+        const newHistory = [
+            { role: 'system', content: 'You are a helpful assistant.' },
+            { 
+                id: Date.now(),
+                role: 'assistant', 
+                content: `🚀 页面已切换到新内容: **${title}**\n\n您现在可以针对新页面点击摘要，或直接发送问题。`, 
+                ts: Date.now() 
+            }
+        ];
+        saveChatHistory(tabId, newHistory);
+        
+        chrome.runtime.sendMessage({
+            action: 'pageNavigated',
+            tabId: tabId,
+            previousUrl: previousUrl,
+            newUrl: url,
+            newTitle: title,
+            timestamp: Date.now()
+        }).catch(() => {});
+    }
+    
     pageCache[tabId] = {
         ...pageCache[tabId],
         url,

@@ -248,32 +248,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 async function processSummarizeRequest(tabId, sendResponse) {
     try {
-        if (!pageCache[tabId]) {
-            sendResponse({ success: true });
-            chrome.tabs.sendMessage(tabId, { action: 'extractPageContent' }, async (response) => {
-                if (chrome.runtime.lastError || !response || !response.success) {
-                    chrome.runtime.sendMessage({ action: 'summaryError', error: `无法提取页面内容` });
-                } else {
-                    setTimeout(async () => {
-                        if (pageCache[tabId] && pageCache[tabId].content) {
-                            await processSummaryWithSettings(tabId);
-                        } else {
-                            chrome.runtime.sendMessage({ action: 'summaryError', error: '提取内容后未能正确缓存' });
-                        }
-                    }, 1000);
-                }
-            });
-            return;
-        }
-        
-        const pageInfo = pageCache[tabId];
-        if (!pageInfo || !pageInfo.content) {
-            sendResponse({ success: false, error: 'No content available for summarization' });
-            return;
-        }
-
         sendResponse({ success: true });
-        await processSummaryWithSettings(tabId);
+        
+        // 无论如何，每次点击【开始摘要】时强制从当前 DOM 提取最新内容
+        // 这解决了 SPA (单页应用) 网址变化后，React/Vue 尚未渲染就被缓存导致的“错把旧网页当新网页内容”的 Bug。
+        chrome.tabs.sendMessage(tabId, { action: 'extractPageContent' }, async (response) => {
+            if (chrome.runtime.lastError || !response || !response.success) {
+                // 如果通信失败但存在旧缓存，则尝试使用旧缓存兜底
+                if (pageCache[tabId] && pageCache[tabId].content) {
+                    await processSummaryWithSettings(tabId);
+                } else {
+                    chrome.runtime.sendMessage({ action: 'summaryError', error: `无法通讯提取内容且无缓存` });
+                }
+            } else {
+                // 等待 Content-Script 解析并发送 pageContent 事件后再行处理摘要
+                setTimeout(async () => {
+                    if (pageCache[tabId] && pageCache[tabId].content) {
+                        await processSummaryWithSettings(tabId);
+                    } else {
+                        chrome.runtime.sendMessage({ action: 'summaryError', error: '提取内容后未能正确缓存' });
+                    }
+                }, 800);
+            }
+        });
     } catch (error) {
         chrome.runtime.sendMessage({ action: 'summaryError', error: error.message || 'Unknown error during summarization' });
     }

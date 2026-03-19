@@ -398,15 +398,20 @@ export function loadAIChat(container) {
 
     // 处理摘要错误
     function handleSummaryError(data) {
-        if (!summaryContentElement) return;
+        const refreshPageContentButton = document.getElementById('refresh-page-content');
 
-        // 显示错误
-        summaryContentElement.innerHTML = `<div class="error-message">摘要生成失败: ${data.error}</div>`;
+        if (summaryContentElement) {
+            // 显示错误
+            summaryContentElement.innerHTML = `<div class="error-message">摘要生成失败: ${data.error}</div>`;
+        }
 
         // 重置状态
         isSummarizing = false;
-        refreshPageContentButton.disabled = false;
-        refreshPageContentButton.textContent = t('chat.summarize', '摘要');
+        if (refreshPageContentButton) {
+            refreshPageContentButton.disabled = false;
+            refreshPageContentButton.classList.remove('loading');
+            refreshPageContentButton.textContent = t('chat.summarize', '开始摘要');
+        }
         currentSummaryMessageId = null;
     }
 
@@ -857,35 +862,13 @@ export function loadAIChat(container) {
 
                 console.log('Current page navigated:', message.newUrl);
 
-                // 添加页面切换通知
-                const notificationElement = document.createElement('div');
-                notificationElement.className = 'page-navigation-notification';
-                notificationElement.innerHTML = `
-                    <div class="notification-icon">
-                        <img src="assets/svg/navigate.svg" alt="Navigation" class="button-icon">
-                    </div>
-                    <div class="notification-content">
-                        <p>页面已切换到: <strong>${message.newTitle}</strong></p>
-                        <p class="notification-url">${message.newUrl}</p>
-                    </div>
-                `;
-                chatMessages.appendChild(notificationElement);
-
-                // 滚动到底部
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-
-                // 确保在页面导航事件处理完成后，再执行initSummaryButton
-                // 这样做的目的是让pageCache有足够的时间更新
                 setTimeout(() => {
                     // 更新摘要按钮状态和页面信息
                     initSummaryButton();
 
-                    // 重新加载该标签页的聊天历史（会清除并重新加载消息）
-                    // 延后执行，确保页面信息区域和摘要按钮已正确显示
-                    setTimeout(() => {
-                        loadChatHistory(currentTabId);
-                    }, 100);
-                }, 300);
+                    // 重新加载该标签页的聊天历史，后台已清理旧帖子会话
+                    loadChatHistory(currentTabId);
+                }, 100);
             }
         }
     });
