@@ -108,7 +108,9 @@ function extractPageWithDefuddle() {
     try {
         if (typeof window.Defuddle !== 'undefined' || typeof Defuddle !== 'undefined') {
             const DefuddleClass = typeof window.Defuddle !== 'undefined' ? window.Defuddle : Defuddle;
-            const defuddle = new DefuddleClass(document, { markdown: false });
+            // 创建文档克隆，防止 Defuddle 修改原始 DOM（比如删除 script/style 等标签）导致网页结构被破坏
+            const documentClone = document.cloneNode(true);
+            const defuddle = new DefuddleClass(documentClone, { markdown: false });
             const result = defuddle.parse();
             if (result && result.content) {
                 console.log('Defuddle成功提取内容:', result.title);

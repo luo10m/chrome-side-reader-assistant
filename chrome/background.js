@@ -8,76 +8,7 @@ import { summarizeWithOpenAI, fetchTranslationWithOpenAI } from './services/llm-
 
 import '../src/js/background/page-cache-listener.js';
 
-class BadgeManager {
-    constructor() {
-        this.diffCounts = {};
-        this.notificationDebounce = {};
-        this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000);
-    }
-    
-    async updateBadge(tabId, increment = 1) {
-        const key = `badge_${tabId}`;
-        const result = await chrome.storage.local.get([key]);
-        let count = parseInt(result[key] || '0') + increment;
-        await chrome.storage.local.set({ [key]: count });
-        await chrome.action.setBadgeText({ tabId, text: count > 0 ? (count > 99 ? '99+' : count.toString()) : '' });
-        if (count > 0) {
-            await chrome.action.setBadgeBackgroundColor({ tabId, color: '#FF4D4F' });
-        }
-        return count;
-    }
-    
-    async clearBadge(tabId) {
-        const key = `badge_${tabId}`;
-        await chrome.storage.local.remove(key);
-        await chrome.action.setBadgeText({ tabId, text: '' });
-        if (this.notificationDebounce[tabId]) {
-            clearTimeout(this.notificationDebounce[tabId]);
-            delete this.notificationDebounce[tabId];
-        }
-    }
-    
-    async cleanup() {
-        const tabs = await chrome.tabs.query({});
-        const activeTabIds = new Set(tabs.map(t => t.id));
-        const allKeys = await chrome.storage.local.get(null);
-        for (const [key] of Object.entries(allKeys)) {
-            if (key.startsWith('badge_')) {
-                const tabId = parseInt(key.split('_')[1]);
-                if (!isNaN(tabId) && !activeTabIds.has(tabId)) {
-                    await chrome.storage.local.remove(key);
-                }
-            }
-        }
-    }
-}
-
-class NotificationManager {
-    constructor() {
-        this.debounceMap = {};
-    }
-    async createNotification(tabId, title, diffCount) {
-        if (this.debounceMap[tabId]) clearTimeout(this.debounceMap[tabId]);
-        this.debounceMap[tabId] = setTimeout(async () => {
-            try {
-                await chrome.notifications.create(`page-update-${tabId}`, {
-                    type: 'basic',
-                    iconUrl: 'assets/icon48.png',
-                    title: '页面有新内容',
-                    message: `${diffCount} 条新更新：${title}`,
-                    priority: 1
-                });
-            } catch (error) {
-                console.error('创建通知失败:', error);
-            } finally {
-                delete this.debounceMap[tabId];
-            }
-        }, 2000);
-    }
-}
-
-const badgeManager = new BadgeManager();
-const notificationManager = new NotificationManager();
+import { badgeManager, notificationManager } from './services/ui-managers.js';
 
 chrome.notifications.onClicked.addListener(async (notificationId) => {
     if (notificationId.startsWith('page-update-')) {
@@ -184,7 +115,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 newUrl: request.newUrl,
                 newTitle: request.newTitle,
                 timestamp: request.timestamp
-            });
+            }).catch(() => {});
             sendResponse({ success: true });
         }
         return false;
@@ -231,7 +162,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     messageId,
                     success: true,
                     translatedText
-                });
+                }).catch(() => {});
             })
             .catch(error => {
                 chrome.runtime.sendMessage({
@@ -239,7 +170,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     messageId,
                     success: false,
                     error: error.message
-                });
+                }).catch(() => {});
             });
         return true;
     }
@@ -258,7 +189,7 @@ async function processSummarizeRequest(tabId, sendResponse) {
                 if (pageCache[tabId] && pageCache[tabId].content) {
                     await processSummaryWithSettings(tabId);
                 } else {
-                    chrome.runtime.sendMessage({ action: 'summaryError', error: `无法通讯提取内容且无缓存` });
+                    chrome.runtime.sendMessage({ action: 'summaryError', error: `无法通讯提取内容且无缓存` }).catch(() => {});
                 }
             } else {
                 // 等待 Content-Script 解析并发送 pageContent 事件后再行处理摘要
@@ -266,13 +197,13 @@ async function processSummarizeRequest(tabId, sendResponse) {
                     if (pageCache[tabId] && pageCache[tabId].content) {
                         await processSummaryWithSettings(tabId);
                     } else {
-                        chrome.runtime.sendMessage({ action: 'summaryError', error: '提取内容后未能正确缓存' });
+                        chrome.runtime.sendMessage({ action: 'summaryError', error: '提取内容后未能正确缓存' }).catch(() => {});
                     }
                 }, 800);
             }
         });
     } catch (error) {
-        chrome.runtime.sendMessage({ action: 'summaryError', error: error.message || 'Unknown error during summarization' });
+        chrome.runtime.sendMessage({ action: 'summaryError', error: error.message || 'Unknown error during summarization' }).catch(() => {});
     }
 }
 
@@ -283,14 +214,14 @@ async function processSummaryWithSettings(tabId) {
         const settings = await loadSettings();
         if (settings.defaultAI === 'openai') {
             if (!settings.openaiApiKey) {
-                chrome.runtime.sendMessage({ action: 'summaryError', error: 'OpenAI API key is not configured' });
+                chrome.runtime.sendMessage({ action: 'summaryError', error: 'OpenAI API key is not configured' }).catch(() => {});
                 return;
             }
             await summarizeWithOpenAI(tabId, pageInfo.url, pageInfo.title, pageInfo.content, settings);
         } else {
-            chrome.runtime.sendMessage({ action: 'summaryError', error: 'Only OpenAI is supported for summarization' });
+            chrome.runtime.sendMessage({ action: 'summaryError', error: 'Only OpenAI is supported for summarization' }).catch(() => {});
         }
     } catch (error) {
-        chrome.runtime.sendMessage({ action: 'summaryError', error: error.message || 'Unknown error during summarization' });
+        chrome.runtime.sendMessage({ action: 'summaryError', error: error.message || 'Unknown error during summarization' }).catch(() => {});
     }
 }

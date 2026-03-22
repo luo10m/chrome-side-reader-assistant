@@ -4,6 +4,7 @@
  * 支持 Twitter/X.com 富媒体内容
  * 检测内容变化并触发通知
  */
+import { badgeManager, notificationManager } from '../../../chrome/services/ui-managers.js';
 
 // 生成内容哈希值
 function generateContentHash(content) {
@@ -62,7 +63,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
         // 基础缓存数据
         const cacheData = {
             url: msg.url,
-            title: msg.title || document.title,
+            title: msg.title || '',
             content: msg.content,
             timestamp: msg.timestamp || Date.now(),
             commentCount: msg.commentCount || 0
@@ -115,10 +116,10 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
             action: 'pageNavigated',
             tabId,
             newUrl: msg.url,
-            newTitle: msg.title || document.title,
+            newTitle: msg.title || '',
             isTwitter: cacheData.isTwitter || false,
             hasNewContent: hasChange
-        });
+        }).catch(() => {});
         
         // 如果检测到变化，更新 Badge 和发送通知
         if (hasChange && diffCount > 0) {
