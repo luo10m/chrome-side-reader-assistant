@@ -1,3 +1,6 @@
+import { ensureMessageList, normalizeSettings } from '../../src/js/shared/runtime-guards.mjs';
+import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL } from '../../src/js/shared/openai-defaults.mjs';
+
 const MAX_PAGE_CACHE = 10;
 export const defaultSettings = {
     theme: 'light',
@@ -19,24 +22,31 @@ export const defaultSettings = {
     ],
     activePromptId: 'default',
     openaiApiKey: '',
-    openaiBaseUrl: 'https://api.openai.com/v1',
-    openaiModel: 'gpt-3.5-turbo',
+    openaiBaseUrl: DEFAULT_OPENAI_BASE_URL,
+    openaiModel: DEFAULT_OPENAI_MODEL,
     openaiCustomModel: '',
 };
 
-export let currentSettings = { ...defaultSettings };
+export let currentSettings = normalizeSettings(defaultSettings, defaultSettings);
 export let pageCache = {};
 export let structuredPageCache = {};
 
 export function updateCurrentSettingsLocally(settings) {
-    currentSettings = settings;
+    currentSettings = normalizeSettings(settings, defaultSettings);
 }
 
 export function loadSettings() {
     return new Promise((resolve) => {
         chrome.storage.local.get(['settings', 'pageCache', 'structuredPageCache'], (result) => {
-            if (result.settings) {
-                currentSettings = { ...defaultSettings, ...result.settings };
+            const normalizedSettings = normalizeSettings(result.settings, defaultSettings);
+            currentSettings = normalizedSettings;
+
+            if (typeof result.settings !== 'undefined') {
+                const rawSettingsJson = JSON.stringify(result.settings);
+                const normalizedSettingsJson = JSON.stringify(normalizedSettings);
+                if (rawSettingsJson !== normalizedSettingsJson) {
+                    chrome.storage.local.set({ settings: normalizedSettings });
+                }
             }
             if (result.pageCache) pageCache = result.pageCache;
             if (result.structuredPageCache) structuredPageCache = result.structuredPageCache;
@@ -47,7 +57,10 @@ export function loadSettings() {
 
 export function saveSettings(settings) {
     return new Promise((resolve) => {
-        const newSettings = { ...currentSettings, ...settings };
+        const safeSettings = settings && typeof settings === 'object' && !Array.isArray(settings)
+            ? settings
+            : {};
+        const newSettings = normalizeSettings({ ...currentSettings, ...safeSettings }, defaultSettings);
         chrome.storage.local.set({ settings: newSettings }, () => {
             currentSettings = newSettings;
             resolve(currentSettings);
@@ -72,33 +85,7 @@ export function updateStructuredPageCache(tabId, data) {
 
 export function upsertPageCache(tabId, url, title, content) {
     if (!tabId) return;
-    
-    const previousUrl = pageCache[tabId] ? pageCache[tabId].url : null;
-    const isNewUrl = previousUrl && previousUrl !== url && previousUrl !== 'about:blank';
-    
-    if (isNewUrl) {
-        console.log(`Tab ${tabId} URL changed from ${previousUrl} to ${url}. Clearing old chats.`);
-        const newHistory = [
-            { role: 'system', content: 'You are a helpful assistant.' },
-            { 
-                id: Date.now(),
-                role: 'assistant', 
-                content: `🚀 页面已切换到新内容: **${title}**\n\n您现在可以针对新页面点击摘要，或直接发送问题。`, 
-                ts: Date.now() 
-            }
-        ];
-        saveChatHistory(tabId, newHistory);
-        
-        chrome.runtime.sendMessage({
-            action: 'pageNavigated',
-            tabId: tabId,
-            previousUrl: previousUrl,
-            newUrl: url,
-            newTitle: title,
-            timestamp: Date.now()
-        }).catch(() => {});
-    }
-    
+
     pageCache[tabId] = {
         ...pageCache[tabId],
         url,
@@ -122,14 +109,16 @@ export function saveChatHistory(tabId, messages) {
 export function loadChatHistory(tabId) {
     return new Promise(resolve => {
         chrome.storage.local.get(['pageMessages_' + tabId], result => {
-            resolve(result['pageMessages_' + tabId] || []);
+            resolve(ensureMessageList(result['pageMessages_' + tabId]));
         });
     });
 }
 
 export async function appendMessage(tabId, msg) {
-    let list = await loadChatHistory(tabId);
-    list.push(msg);
+    let list = ensureMessageList(await loadChatHistory(tabId));
+    if (msg && typeof msg === 'object') {
+        list.push(msg);
+    }
     const MAX_MESSAGES_PER_TAB = 50;
     if (list.length > MAX_MESSAGES_PER_TAB) {
         const system = list.filter(m => m.role === 'system' || m.type === 'summary');

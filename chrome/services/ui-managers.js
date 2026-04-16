@@ -1,3 +1,5 @@
+import { resolveExtensionAssetUrl } from '../../src/js/shared/runtime-guards.mjs';
+
 class BadgeManager {
     constructor() {
         this.diffCounts = {};
@@ -50,9 +52,10 @@ class NotificationManager {
         if (this.debounceMap[tabId]) clearTimeout(this.debounceMap[tabId]);
         this.debounceMap[tabId] = setTimeout(async () => {
             try {
+                const iconUrl = resolveExtensionAssetUrl('assets/icon48.png', chrome.runtime?.getURL?.bind(chrome.runtime));
                 await chrome.notifications.create(`page-update-${tabId}`, {
                     type: 'basic',
-                    iconUrl: 'assets/icon48.png',
+                    iconUrl,
                     title: '页面有新内容',
                     message: `${diffCount} 条新更新：${title}`,
                     priority: 1

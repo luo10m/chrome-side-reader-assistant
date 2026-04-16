@@ -6,6 +6,8 @@ import { getRichMediaRenderer } from '../renderers/twitter-renderer.js';
 import { t } from '../utils/i18n.js';
 import { safeSendMessage } from '../utils/message-client.js';
 import { MAX_MESSAGES_PER_TAB, MAX_HISTORY_IN_CONTEXT } from '../constants.js';
+import { ensureMessageList } from '../shared/runtime-guards.mjs';
+import { DEFAULT_OPENAI_MODEL } from '../shared/openai-defaults.mjs';
 
 // Load AI Chat
 export function loadAIChat(container) {
@@ -108,21 +110,18 @@ export function loadAIChat(container) {
                 // 始终启用摘要按钮，让用户可以尝试提取内容
                 refreshPageContentButton.disabled = false;
 
-                // 检查是否有页面缓存（仅用于日志记录）
-                safeSendMessage({ action: 'getSettings' }, (settings) => {
-                    chrome.storage.local.get(['pageCache'], (result) => {
-                        const pageCache = result.pageCache || {};
-                        const tabInfo = pageCache[tabId];
+                chrome.storage.local.get(['pageCache'], (result) => {
+                    const pageCache = result.pageCache || {};
+                    const tabInfo = pageCache[tabId];
 
-                        console.log('页面缓存信息:', tabInfo);
+                    console.log('页面缓存信息:', tabInfo);
 
-                        // 无论是否有缓存，都显示页面信息并启用按钮
-                        if (tabInfo && tabInfo.url === currentTab.url) {
-                            console.log('找到页面缓存，将使用缓存内容');
-                        } else {
-                            console.log('未找到页面缓存，将尝试提取内容');
-                        }
-                    });
+                    // 无论是否有缓存，都显示页面信息并启用按钮
+                    if (tabInfo && tabInfo.url === currentTab.url) {
+                        console.log('找到页面缓存，将使用缓存内容');
+                    } else {
+                        console.log('未找到页面缓存，将尝试提取内容');
+                    }
                 });
             } else {
                 // 没有活动标签页，禁用摘要按钮
@@ -147,6 +146,10 @@ export function loadAIChat(container) {
     function refreshPageContent() {
         // 调用开始摘要函数
         startSummarize();
+    }
+
+    function openSettings() {
+        document.getElementById('settings-btn')?.click();
     }
     
     // 移除原始硬编码的 renderTwitterContent 逻辑，统一委托给 renderer registry 模式处理
@@ -453,7 +456,7 @@ export function loadAIChat(container) {
         if (role === 'assistant') {
             // 获取当前使用的模型
             getSettings().then(settings => {
-                const modelName = settings.openaiModel || 'gpt-3.5-turbo';
+                const modelName = settings.openaiModel || DEFAULT_OPENAI_MODEL;
 
                 // 设置模型属性用于CSS显示
                 messageElement.setAttribute('data-model', modelName);
@@ -558,16 +561,18 @@ export function loadAIChat(container) {
             addMessageToUI('user', userMessage);
             
             // 2. 拉取完整历史
-            const { list } = await safeSendMessage({
+            const historyResponse = await safeSendMessage({
                 action: 'getChatHistory',
                 tabId
             });
+            const list = ensureMessageList(historyResponse?.list);
             
             // 3. 取得页面摘要
-            const ctx = await safeSendMessage({
+            const ctxResponse = await safeSendMessage({
                 action: 'getPageContext',
                 tabId
             });
+            const ctx = ctxResponse && ctxResponse.success !== false ? ctxResponse : null;
             
             // 获取当前活动的系统提示词
             const systemPrompt = await getActiveSystemPrompt();
@@ -774,7 +779,7 @@ export function loadAIChat(container) {
             // 清空当前显示的消息
             chatMessages.innerHTML = '';
 
-            const messages = result['pageMessages_' + tabId] || [];
+            const messages = ensureMessageList(result['pageMessages_' + tabId]);
             console.log('获取到消息历史:', messages);
 
             // 更新本地聊天历史 - 保留所有消息包括摘要

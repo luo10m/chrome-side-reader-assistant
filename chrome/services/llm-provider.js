@@ -1,4 +1,13 @@
 import { currentSettings, defaultSettings, updatePageCacheRecord } from './storage-service.js';
+import { sendRuntimeMessageSafely } from '../../src/js/shared/runtime-guards.mjs';
+import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL } from '../../src/js/shared/openai-defaults.mjs';
+
+function dispatchRuntimeMessage(payload) {
+    return sendRuntimeMessageSafely(
+        chrome.runtime.sendMessage.bind(chrome.runtime),
+        payload
+    );
+}
 
 export async function summarizeWithOpenAI(tabId, url, title, content, settings) {
     if (!settings) {
@@ -15,7 +24,7 @@ export async function summarizeWithOpenAI(tabId, url, title, content, settings) 
         : content;
 
     try {
-        chrome.runtime.sendMessage({
+        await dispatchRuntimeMessage({
             action: 'summaryStream',
             messageId,
             done: false,
@@ -53,8 +62,8 @@ export async function summarizeWithOpenAI(tabId, url, title, content, settings) 
 {{苏格拉底的提问}}
 `;
 
-        const baseUrl = settings.openaiBaseUrl || 'https://api.openai.com/v1';
-        const model = settings.openaiCustomModel || settings.openaiModel || 'gpt-3.5-turbo';
+        const baseUrl = settings.openaiBaseUrl || DEFAULT_OPENAI_BASE_URL;
+        const model = settings.openaiCustomModel || settings.openaiModel || DEFAULT_OPENAI_MODEL;
 
         const response = await fetch(`${baseUrl}/chat/completions`, {
             method: 'POST',
@@ -84,7 +93,7 @@ export async function summarizeWithOpenAI(tabId, url, title, content, settings) 
         while (true) {
             const { done, value } = await reader.read();
             if (done) {
-                chrome.runtime.sendMessage({
+                await dispatchRuntimeMessage({
                     action: 'summaryStream',
                     messageId,
                     done: true,
@@ -107,7 +116,7 @@ export async function summarizeWithOpenAI(tabId, url, title, content, settings) 
                                 const content = json.choices?.[0]?.delta?.content || '';
                                 if (content) {
                                     fullResponse += content;
-                                    chrome.runtime.sendMessage({
+                                    await dispatchRuntimeMessage({
                                         action: 'summaryStream',
                                         messageId,
                                         done: false,
@@ -133,7 +142,7 @@ export async function summarizeWithOpenAI(tabId, url, title, content, settings) 
         return fullResponse;
     } catch (error) {
         console.error('Summarization error:', error);
-        chrome.runtime.sendMessage({
+        await dispatchRuntimeMessage({
             action: 'summaryError',
             error: error.message
         });
@@ -149,8 +158,8 @@ export async function fetchTranslationWithOpenAI(text, targetLang) {
         throw new Error('OpenAI API Key is not configured');
     }
     
-    const baseUrl = settings.openaiBaseUrl || 'https://api.openai.com/v1';
-    const model = settings.openaiCustomModel || settings.openaiModel || 'gpt-3.5-turbo';
+    const baseUrl = settings.openaiBaseUrl || DEFAULT_OPENAI_BASE_URL;
+    const model = settings.openaiCustomModel || settings.openaiModel || DEFAULT_OPENAI_MODEL;
     
     const languageMap = {
         'en': 'English', 'zh_cn': 'Chinese (Simplified)', 'zh-CN': 'Chinese (Simplified)', 

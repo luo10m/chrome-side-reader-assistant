@@ -20,6 +20,7 @@
     "commands",
     "clipboardWrite",
     "tabs",
+    "scripting",
     "notifications",
     "alarms",
     "webNavigation"
@@ -59,8 +60,7 @@
         "lib/Readability.js",
         "lib/defuddle.js",
         "src/js/site-adapters.js",
-        "src/js/content-script.js",
-        "src/js/content/extractor.js"
+        "src/js/content-script.js"
       ],
       "run_at": "document_idle"
     }

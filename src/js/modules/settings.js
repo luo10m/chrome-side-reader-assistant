@@ -1,10 +1,19 @@
 import { getSettings, updateSettings } from '../config/settings.js';
 import { t, getCurrentLanguage, loadLanguage, getAvailableLanguages } from '../utils/i18n.js';
+import { normalizeSettings } from '../shared/runtime-guards.mjs';
+import {
+    DEFAULT_OPENAI_BASE_URL,
+    DEFAULT_OPENAI_MODEL,
+    getDefaultOpenAIModels
+} from '../shared/openai-defaults.mjs';
 
 // Load settings
 export async function loadSettings(container) {
     // 先获取设置，然后再创建 HTML
     const settings = await getSettings();
+    const defaultOpenAIModelOptions = getDefaultOpenAIModels().map((model) => `
+                                    <option value="${model.id}" ${settings.openaiModel === model.id ? 'selected' : ''}>${model.name}</option>
+    `).join('');
 
     // Get language options
     const languageOptions = await generateLanguageOptions();
@@ -98,7 +107,7 @@ export async function loadSettings(container) {
                         <div class="settings-item">
                             <label for="openai-base-url" data-i18n="settings.sections.openai.baseUrl.label">Base URL (Optional)</label>
                             <div class="settings-control">
-                                <input type="text" id="openai-base-url" placeholder="https://api.openai.com/v1" value="${settings.openaiBaseUrl || ''}">
+                                <input type="text" id="openai-base-url" placeholder="${DEFAULT_OPENAI_BASE_URL}" value="${settings.openaiBaseUrl || ''}">
                             </div>
                         </div>
                         
@@ -107,10 +116,7 @@ export async function loadSettings(container) {
                             <div class="model-select-container">
                                 <select id="openai-model-select">
                                     <option value="" data-i18n="settings.sections.openai.model.placeholder">Select a model</option>
-                                    <option value="gpt-3.5-turbo" ${settings.openaiModel === 'gpt-3.5-turbo' ? 'selected' : ''}>GPT-3.5 Turbo</option>
-                                    <option value="gpt-4" ${settings.openaiModel === 'gpt-4' ? 'selected' : ''}>GPT-4</option>
-                                    <option value="gpt-4-turbo" ${settings.openaiModel === 'gpt-4-turbo' ? 'selected' : ''}>GPT-4 Turbo</option>
-                                    <option value="custom" ${settings.openaiModel === 'custom' ? 'selected' : ''}>Custom</option>
+                                    ${defaultOpenAIModelOptions}
                                 </select>
                                 <button id="refresh-openai-models" class="icon-button" data-i18n-title="settings.buttons.refresh">
                                     <img src="assets/svg/refresh.svg" alt="Refresh" class="button-icon">
@@ -264,7 +270,7 @@ export async function loadSettings(container) {
                 'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: 'gpt-3.5-turbo',
+                model: DEFAULT_OPENAI_MODEL,
                 messages: [{ role: 'user', content: 'test' }],
                 max_tokens: 5
             })
@@ -321,12 +327,6 @@ export async function loadSettings(container) {
             await updateSettings(newSettings);
             console.log('Save settings done')
 
-            // Notify background.js updated
-            chrome.runtime.sendMessage({
-                actioin: 'updateSettings',
-                settings: newSettings
-            })
-
             // Show success message
             showNotification(container, t('settings.notifications.saved'), 'success');
 
@@ -366,8 +366,8 @@ export async function loadSettings(container) {
                     systemPromptTextarea.value = resetSettings.systemPrompt || '';
                     defaultAI.value = resetSettings.defaultAI || 'openai';
                     openaiApiKey.value = resetSettings.openaiApiKey || '';
-                    openaiBaseUrl.value = resetSettings.openaiBaseUrl || 'https://api.openai.com/v1';
-                    openaiModelSelect.value = resetSettings.openaiModel || 'gpt-3.5-turbo';
+                    openaiBaseUrl.value = resetSettings.openaiBaseUrl || DEFAULT_OPENAI_BASE_URL;
+                    openaiModelSelect.value = resetSettings.openaiModel || DEFAULT_OPENAI_MODEL;
                     openaiCustomModel.value = resetSettings.openaiCustomModel || '';
 
                     // 应用主题
@@ -477,10 +477,9 @@ export async function loadSettings(container) {
             console.error('Error fetching OpenAI models:', error);
 
             // 提供默认模型选项，即使获取失败
-            openaiModelSelect.innerHTML = `<option value="" data-i18n="settings.sections.openai.model.placeholder">Select a model</option>
-                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                <option value="gpt-4o">GPT-4o</option>
-                <option value="custom">Custom Model</option>`;
+            openaiModelSelect.innerHTML = `<option value="" data-i18n="settings.sections.openai.model.placeholder">Select a model</option>${
+                getDefaultOpenAIModels().map((model) => `<option value="${model.id}">${model.name}</option>`).join('')
+            }`;
 
             // 如果有已选模型，尝试选中
             if (settings.openaiModel) {
@@ -531,6 +530,8 @@ export async function loadSettings(container) {
 
     // 初始化系统提示词功能
     function initSystemPrompts(settings) {
+        settings = normalizeSettings(settings);
+
         // 确保系统提示词数组存在
         if (!settings.systemPrompts || !Array.isArray(settings.systemPrompts) || settings.systemPrompts.length === 0) {
             // 如果不存在，创建默认提示词

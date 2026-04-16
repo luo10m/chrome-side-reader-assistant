@@ -1,12 +1,15 @@
 import './services/storage-service.js';
 import { 
-    currentSettings, defaultSettings, loadSettings, saveSettings, 
+    currentSettings, loadSettings, updateCurrentSettingsLocally,
     upsertPageCache, pageCache, structuredPageCache, updateStructuredPageCache,
     loadChatHistory, saveChatHistory, appendMessage 
 } from './services/storage-service.js';
 import { summarizeWithOpenAI, fetchTranslationWithOpenAI } from './services/llm-provider.js';
-
-import '../src/js/background/page-cache-listener.js';
+import {
+    CONTENT_SCRIPT_RECOVERY_FILES,
+    isInjectableTabUrl,
+    isRecoverableConnectionError
+} from '../src/js/shared/content-script-recovery.mjs';
 
 import { badgeManager, notificationManager } from './services/ui-managers.js';
 
@@ -37,9 +40,7 @@ chrome.commands.onCommand.addListener((command) => {
 
 chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === 'local' && changes.settings) {
-        import('./services/storage-service.js').then(module => {
-            module.updateCurrentSettingsLocally(changes.settings.newValue);
-        });
+        updateCurrentSettingsLocally(changes.settings.newValue);
     }
 });
 
@@ -50,6 +51,145 @@ chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
         chrome.tabs.sendMessage(details.tabId, { action: 'extractPageContent' }).catch(() => {});
     }
 });
+
+function generateContentHash(content) {
+    if (!content) return '';
+
+    let hash = 0;
+    const str = typeof content === 'string' ? content : JSON.stringify(content);
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash &= hash;
+    }
+    return hash.toString(16);
+}
+
+function detectContentChange(newData, oldData) {
+    if (!oldData) {
+        return { hasChange: false, diffCount: 0 };
+    }
+
+    const timeDiff = (newData.timestamp || 0) - (oldData.timestamp || 0);
+    if (timeDiff <= 0) {
+        return { hasChange: false, diffCount: 0 };
+    }
+
+    const contentChanged = generateContentHash(newData.content || '') !== generateContentHash(oldData.content || '');
+    const newCount = newData.commentCount || 0;
+    const oldCount = oldData.commentCount || 0;
+    const countDiff = Math.max(0, newCount - oldCount);
+
+    return {
+        hasChange: contentChanged || countDiff > 0,
+        diffCount: Math.max(countDiff, contentChanged ? 1 : 0)
+    };
+}
+
+function mergePageCacheData(request, previousData = {}) {
+    const merged = {
+        ...previousData,
+        url: request.url,
+        title: request.title || previousData.title || '',
+        content: request.content,
+        timestamp: request.timestamp || Date.now()
+    };
+
+    if (request.excerpt) merged.excerpt = request.excerpt;
+    if (request.byline) merged.byline = request.byline;
+    if (request.siteName) merged.siteName = request.siteName;
+
+    if (request.richData) {
+        merged.richData = request.richData;
+        merged.isTwitter = true;
+        merged.commentCount = request.richData.replyCount || request.commentCount || 0;
+        if (request.richData.images?.length) {
+            merged.hasImages = true;
+            merged.imageCount = request.richData.images.length;
+            merged.images = request.richData.images;
+        }
+        if (request.richData.videos?.length) {
+            merged.hasVideos = true;
+            merged.videoCount = request.richData.videos.length;
+            merged.videos = request.richData.videos;
+        }
+        if (request.richData.author) {
+            merged.author = request.richData.author;
+        }
+        if (request.richData.html) {
+            merged.htmlContent = request.richData.html;
+        }
+    } else {
+        merged.commentCount = request.commentCount || previousData.commentCount || 0;
+    }
+
+    return merged;
+}
+
+async function handlePageContent(request, sender, sendResponse) {
+    try {
+        const tabId = sender.tab ? sender.tab.id : null;
+        if (!tabId || !request.content) {
+            sendResponse({ success: false, error: 'No content or tab ID provided' });
+            return;
+        }
+
+        const oldData = pageCache[tabId];
+        const cacheData = mergePageCacheData(request, oldData);
+        const previousUrl = oldData?.url || null;
+        const isNewUrl = previousUrl && previousUrl !== cacheData.url && previousUrl !== 'about:blank';
+
+        if (isNewUrl) {
+            console.log(`Tab ${tabId} URL changed from ${previousUrl} to ${cacheData.url}. Clearing old chats.`);
+            saveChatHistory(tabId, [
+                { role: 'system', content: 'You are a helpful assistant.' },
+                {
+                    id: Date.now(),
+                    role: 'assistant',
+                    content: `🚀 页面已切换到新内容: **${cacheData.title}**\n\n您现在可以针对新页面点击摘要，或直接发送问题。`,
+                    ts: Date.now()
+                }
+            ]);
+        }
+
+        upsertPageCache(tabId, cacheData.url, cacheData.title, cacheData.content);
+        pageCache[tabId] = {
+            ...pageCache[tabId],
+            ...cacheData
+        };
+        await chrome.storage.local.set({ pageCache });
+
+        const { hasChange, diffCount } = detectContentChange(pageCache[tabId], oldData);
+        chrome.runtime.sendMessage({
+            action: 'pageNavigated',
+            tabId,
+            previousUrl,
+            newUrl: cacheData.url,
+            newTitle: cacheData.title,
+            isTwitter: cacheData.isTwitter || false,
+            hasNewContent: hasChange,
+            timestamp: cacheData.timestamp
+        }).catch(() => {});
+
+        if (hasChange && diffCount > 0) {
+            try {
+                const newBadgeCount = await badgeManager.updateBadge(tabId, diffCount);
+                const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                if (!activeTab || activeTab.id !== tabId) {
+                    notificationManager.createNotification(tabId, cacheData.title || '新内容', diffCount);
+                }
+                console.log(`[pageCache] 检测到新内容，更新Badge: ${newBadgeCount}`);
+            } catch (error) {
+                console.error('处理内容变化时出错:', error);
+            }
+        }
+
+        sendResponse({ success: true });
+    } catch (error) {
+        console.error('处理 pageContent 失败:', error);
+        sendResponse({ success: false, error: error.message || 'Failed to update page cache' });
+    }
+}
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'getChatHistory') {
@@ -96,29 +236,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return false;
     }
     else if (request.action === 'pageContent') {
-        const tabId = sender.tab ? sender.tab.id : null;
-        if (tabId && request.content) {
-            upsertPageCache(tabId, request.url, request.title, request.content);
-            sendResponse({ success: true });
-        } else {
-            sendResponse({ success: false, error: 'No content or tab ID provided' });
-        }
+        handlePageContent(request, sender, sendResponse);
         return true;
-    }
-    else if (request.action === 'pageNavigated') {
-        const tabId = sender.tab ? sender.tab.id : null;
-        if (tabId) {
-            chrome.runtime.sendMessage({
-                action: 'pageNavigated',
-                tabId: tabId,
-                previousUrl: request.previousUrl,
-                newUrl: request.newUrl,
-                newTitle: request.newTitle,
-                timestamp: request.timestamp
-            }).catch(() => {});
-            sendResponse({ success: true });
-        }
-        return false;
     }
     else if (request.action === 'summarizePage') {
         let targetTabId = request.tabId;
@@ -132,18 +251,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
         } else {
             processSummarizeRequest(targetTabId, sendResponse);
-        }
-        return true;
-    }
-    else if (request.action === 'getSettings') {
-        loadSettings().then(settings => sendResponse(settings));
-        return true;
-    }
-    else if (request.action === 'updateSettings') {
-        if (request.settings && request.settings.reset === true) {
-            saveSettings(defaultSettings).then(settings => sendResponse(settings));
-        } else {
-            saveSettings(request.settings).then(settings => sendResponse(settings)).catch(err => sendResponse({error: err.message}));
         }
         return true;
     }
@@ -177,31 +284,116 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
 });
 
+function requestPageExtraction(tabId) {
+    return new Promise((resolve) => {
+        try {
+            chrome.tabs.sendMessage(tabId, { action: 'extractPageContent' }, (response) => {
+                const error = chrome.runtime.lastError;
+                if (error) {
+                    resolve({ success: false, error: error.message });
+                    return;
+                }
+
+                if (response && response.success) {
+                    resolve({ success: true });
+                    return;
+                }
+
+                resolve({
+                    success: false,
+                    error: response?.error || 'Content script did not acknowledge extraction request'
+                });
+            });
+        } catch (error) {
+            resolve({ success: false, error: error.message || String(error) });
+        }
+    });
+}
+
+async function recoverContentScript(tabId) {
+    try {
+        const tab = await chrome.tabs.get(tabId);
+        if (!tab || !isInjectableTabUrl(tab.url || '')) {
+            return {
+                success: false,
+                error: '当前页面不支持内容提取，请切换到普通网页后重试'
+            };
+        }
+
+        await chrome.scripting.executeScript({
+            target: { tabId },
+            files: CONTENT_SCRIPT_RECOVERY_FILES
+        });
+
+        return { success: true };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message || '无法重新注入页面脚本'
+        };
+    }
+}
+
+async function requestPageExtractionWithRecovery(tabId) {
+    const firstAttempt = await requestPageExtraction(tabId);
+    if (firstAttempt.success) {
+        return firstAttempt;
+    }
+
+    if (!isRecoverableConnectionError(firstAttempt.error)) {
+        return firstAttempt;
+    }
+
+    const recovery = await recoverContentScript(tabId);
+    if (!recovery.success) {
+        return recovery;
+    }
+
+    return requestPageExtraction(tabId);
+}
+
+async function waitForPageCache(tabId, minTimestamp, timeoutMs = 5000, intervalMs = 200) {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+        const cached = pageCache[tabId];
+        if (cached && cached.content && (cached.timestamp || 0) >= minTimestamp) {
+            return true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+
+    return false;
+}
+
 async function processSummarizeRequest(tabId, sendResponse) {
     try {
         sendResponse({ success: true });
-        
-        // 无论如何，每次点击【开始摘要】时强制从当前 DOM 提取最新内容
-        // 这解决了 SPA (单页应用) 网址变化后，React/Vue 尚未渲染就被缓存导致的“错把旧网页当新网页内容”的 Bug。
-        chrome.tabs.sendMessage(tabId, { action: 'extractPageContent' }, async (response) => {
-            if (chrome.runtime.lastError || !response || !response.success) {
-                // 如果通信失败但存在旧缓存，则尝试使用旧缓存兜底
-                if (pageCache[tabId] && pageCache[tabId].content) {
-                    await processSummaryWithSettings(tabId);
-                } else {
-                    chrome.runtime.sendMessage({ action: 'summaryError', error: `无法通讯提取内容且无缓存` }).catch(() => {});
-                }
+
+        const requestStartedAt = Date.now();
+        const extractionResult = await requestPageExtractionWithRecovery(tabId);
+
+        if (!extractionResult.success) {
+            if (pageCache[tabId] && pageCache[tabId].content) {
+                await processSummaryWithSettings(tabId);
             } else {
-                // 等待 Content-Script 解析并发送 pageContent 事件后再行处理摘要
-                setTimeout(async () => {
-                    if (pageCache[tabId] && pageCache[tabId].content) {
-                        await processSummaryWithSettings(tabId);
-                    } else {
-                        chrome.runtime.sendMessage({ action: 'summaryError', error: '提取内容后未能正确缓存' }).catch(() => {});
-                    }
-                }, 800);
+                const errorMessage = extractionResult.error || '无法通讯提取内容且无缓存';
+                chrome.runtime.sendMessage({ action: 'summaryError', error: errorMessage }).catch(() => {});
             }
-        });
+            return;
+        }
+
+        const cacheReady = await waitForPageCache(tabId, requestStartedAt);
+        if (!cacheReady) {
+            if (pageCache[tabId] && pageCache[tabId].content) {
+                await processSummaryWithSettings(tabId);
+            } else {
+                chrome.runtime.sendMessage({ action: 'summaryError', error: '提取内容后未能正确缓存' }).catch(() => {});
+            }
+            return;
+        }
+
+        await processSummaryWithSettings(tabId);
     } catch (error) {
         chrome.runtime.sendMessage({ action: 'summaryError', error: error.message || 'Unknown error during summarization' }).catch(() => {});
     }

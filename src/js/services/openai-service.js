@@ -1,23 +1,40 @@
 // OpenAI API Service
 import { getSettings } from '../config/settings.js';
+import {
+    DEFAULT_OPENAI_BASE_URL,
+    DEFAULT_OPENAI_MODEL,
+    getDefaultOpenAIModels
+} from '../shared/openai-defaults.mjs';
+
+function normalizeApiBaseUrl(baseUrl) {
+    const normalized = (baseUrl || DEFAULT_OPENAI_BASE_URL).trim().replace(/\/+$/, '');
+    if (normalized.endsWith('/chat/completions')) {
+        return normalized;
+    }
+    if (normalized.endsWith('/v1')) {
+        return `${normalized}/chat/completions`;
+    }
+    return `${normalized}/chat/completions`;
+}
 
 // Send message to OpenAI
 export async function sendMessageToOpenAI(message, history = [], systemPrompt = null, callback = null) {
     try {
         // Get settings
         const settings = await getSettings();
+        const apiKey = (settings.openaiApiKey || '').trim();
         
         // Check if OpenAI settings are configured
-        if (!settings.openaiApiKey) {
+        if (!apiKey) {
             throw new Error('OpenAI API key is not configured');
         }
         
         // Prepare API URL
-        const apiUrl = settings.openaiBaseUrl + '/chat/completions';
+        const apiUrl = normalizeApiBaseUrl(settings.openaiBaseUrl);
         console.debug('Using OpenAI API URL:', apiUrl);
         
         // Get model name, if it's a custom model use the custom model name
-        let model = settings.openaiModel || 'gpt-3.5-turbo';
+        let model = settings.openaiModel || DEFAULT_OPENAI_MODEL;
         if (model === 'custom' && settings.openaiCustomModel) {
             model = settings.openaiCustomModel;
         }
@@ -55,7 +72,7 @@ export async function sendMessageToOpenAI(message, history = [], systemPrompt = 
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${settings.openaiApiKey}`
+                'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify({
                 model: model,
@@ -272,8 +289,7 @@ export async function getOpenAIModels(apiKey, baseUrl) {
         if (!data || !data.data || data.data.length === 0) {
             console.warn('No models returned from OpenAI API, using defaults');
             return [
-                { id: 'gpt-3.5-turbo', name: 'GPT-3.5' },
-                { id: 'gpt-4o', name: 'GPT-4o' },
+                ...getDefaultOpenAIModels()
             ];
         }
         
@@ -292,8 +308,7 @@ export async function getOpenAIModels(apiKey, baseUrl) {
         console.error('Error fetching OpenAI models:', error);
         // Return default models instead of throwing error
         return [
-            { id: 'gpt-3.5-turbo', name: 'GPT-3.5' },
-            { id: 'gpt-4o', name: 'GPT-4o' },
+            ...getDefaultOpenAIModels()
         ];
     }
 } 

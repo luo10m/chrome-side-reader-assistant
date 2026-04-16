@@ -198,6 +198,49 @@ function safeSendMessage(message, callback) {
     }
 }
 
+function extractTwitterRichData() {
+    const hostname = location.hostname;
+    if (
+        !(hostname.match(/(^|\.)x\.com$/) || hostname.match(/(^|\.)twitter\.com$/)) ||
+        !location.pathname.match(/\/[^\/]+\/status\/\d+/)
+    ) {
+        return null;
+    }
+
+    const textElement = document.querySelector('article div[data-testid="tweetText"]');
+    const article = textElement?.closest('article');
+    if (!textElement || !article) {
+        return null;
+    }
+
+    const images = [...article.querySelectorAll('div[data-testid="tweetPhoto"] img')]
+        .map((img) => img.src)
+        .filter((src) => src && !src.includes('placeholder'));
+    const videos = [...article.querySelectorAll('video')]
+        .map((video) => video.src || video.querySelector('source')?.src)
+        .filter(Boolean);
+    const author = article.querySelector('div[data-testid="User-Name"]')?.textContent?.trim() || '';
+    const publishTime = article.querySelector('time')?.getAttribute('datetime') || '';
+
+    return {
+        text: textElement.innerText.trim(),
+        html: textElement.innerHTML,
+        images,
+        videos,
+        author,
+        publishTime
+    };
+}
+
+function sendExtractedContent(payload) {
+    const richData = extractTwitterRichData();
+    safeSendMessage({
+        action: 'pageContent',
+        ...payload,
+        ...(richData ? { richData } : {})
+    });
+}
+
 // 改进的内容提取函数
 function extractPageText() {
     try {
@@ -222,8 +265,7 @@ function extractPageText() {
                 const combinedText = `作者: ${author}\n标题: ${noteTitle}\n内容: ${noteDesc}`;
                 console.log('小红书正文提取成功:', combinedText.substring(0, 50));
                 
-                safeSendMessage({
-                    action: 'pageContent',
+                sendExtractedContent({
                     url: url,
                     title: title,
                     content: combinedText,
@@ -270,8 +312,7 @@ function extractPageText() {
 
         if (defuddleResult) {
             const content = defuddleResult.textContent || defuddleResult.content;
-            safeSendMessage({
-                action: 'pageContent',
+            sendExtractedContent({
                 url: url,
                 title: defuddleResult.title || title,
                 content: content,
@@ -293,25 +334,17 @@ function extractPageText() {
         // 如果Readability成功提取
         if (readabilityResult) {
             const content = readabilityResult.textContent || readabilityResult.content;
-            
-            // 发送消息到后台脚本，添加try-catch以处理上下文失效
-            try {
-                if (isExtensionContextValid()) {
-                    chrome.runtime.sendMessage({
-                        action: 'pageContent',
-                        url: url,
-                        title: readabilityResult.title || title,
-                        content: content,
-                        timestamp: Date.now(),
-                        excerpt: readabilityResult.excerpt,
-                        byline: readabilityResult.byline,
-                        siteName: readabilityResult.siteName
-                    });
-                    console.log('使用Readability提取的内容已发送到后台');
-                }
-            } catch (chromeError) {
-                console.log('发送消息时出错，可能是扩展上下文已失效:', chromeError);
-            }
+
+            sendExtractedContent({
+                url: url,
+                title: readabilityResult.title || title,
+                content: content,
+                timestamp: Date.now(),
+                excerpt: readabilityResult.excerpt,
+                byline: readabilityResult.byline,
+                siteName: readabilityResult.siteName
+            });
+            console.log('使用Readability提取的内容已发送到后台');
             return;
         }
         
@@ -362,8 +395,7 @@ function extractPageText() {
         }
         
         // 发送消息到后台脚本
-        safeSendMessage({
-            action: 'pageContent',
+        sendExtractedContent({
             url: url,
             title: title,
             content: content,
@@ -373,6 +405,11 @@ function extractPageText() {
     } catch (e) {
         console.error('提取页面文本失败', e);
     }
+}
+
+function bootstrapExtraction() {
+    attemptExtraction();
+    setupPageMonitors();
 }
 
 // 页面卸载时清理逻辑
@@ -496,11 +533,11 @@ function setupPageMonitors() {
 if (document.readyState === 'loading') {
     window.addEventListener('load', () => {
         // 给页面一点时间完全渲染
-        setTimeout(() => attemptExtraction(), 1000);
+        setTimeout(() => bootstrapExtraction(), 1000);
     });
 } else {
     // 页面已经加载，但仍然延迟执行
-    setTimeout(() => attemptExtraction(), 1000);
+    setTimeout(() => bootstrapExtraction(), 1000);
 }
 
 // 监听来自侧边栏的消息，处理手动刷新内容的请求

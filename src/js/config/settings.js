@@ -2,57 +2,68 @@
  * 设置访问工具
  * 这个文件提供了访问和更新设置的函数
  */
+import { mergeSettingsPatch, normalizeSettings } from '../shared/runtime-guards.mjs';
 
-// 获取当前设置
+function readRawSettingsFromStorage() {
+    return new Promise((resolve, reject) => {
+        try {
+            chrome.storage.local.get(['settings'], (result) => {
+                const error = chrome.runtime?.lastError;
+                if (error) {
+                    reject(error);
+                    return;
+                }
+                resolve(result?.settings);
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+function writeSettingsToStorage(settings) {
+    return new Promise((resolve, reject) => {
+        try {
+            chrome.storage.local.set({ settings }, () => {
+                const error = chrome.runtime?.lastError;
+                if (error) {
+                    reject(error);
+                    return;
+                }
+                resolve(settings);
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
 export async function getSettings() {
-    return new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage({
-            action: 'getSettings'
-        }, (response) => {
-            if (chrome.runtime.lastError) {
-                reject(chrome.runtime.lastError);
-            } else if (response.error) {
-                reject(response.error);
-            } else {
-                resolve(response);
-            }
-        });
-    });
+    const rawSettings = await readRawSettingsFromStorage();
+    return normalizeSettings(rawSettings);
 }
 
-// 更新设置
 export async function updateSettings(settings) {
-    return new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage({
-            action: 'updateSettings',
-            settings: settings
-        }, (response) => {
-            if (chrome.runtime.lastError) {
-                reject(chrome.runtime.lastError);
-            } else if (response.error) {
-                reject(response.error);
-            } else {
-                resolve(response);
-            }
-        });
-    });
+    const currentSettings = await getSettings();
+    const nextSettings = settings?.reset === true
+        ? normalizeSettings({})
+        : mergeSettingsPatch(currentSettings, settings);
+
+    await writeSettingsToStorage(nextSettings);
+    return nextSettings;
 }
 
-// 更新单个设置
 export async function updateSetting(key, value) {
-    const settings = await getSettings();
-    settings[key] = value;
-    return updateSettings(settings);
+    return updateSettings({ [key]: value });
 }
 
-// 获取当前活动系统提示词
 export async function getActiveSystemPrompt() {
     const settings = await getSettings();
     if (settings && settings.activePromptId && settings.systemPrompts) {
-        const activePrompt = settings.systemPrompts.find(p => p.id === settings.activePromptId);
+        const activePrompt = settings.systemPrompts.find((prompt) => prompt.id === settings.activePromptId);
         if (activePrompt) {
             return activePrompt.content;
         }
     }
     return settings?.systemPrompt || 'You are a helpful assistant.';
-} 
+}
