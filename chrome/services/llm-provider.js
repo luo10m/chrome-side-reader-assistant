@@ -32,13 +32,6 @@ export async function summarizeWithOpenAI(tabId, url, title, content, settings) 
         : content;
 
     try {
-        await dispatchRuntimeMessage({
-            action: 'summaryStream',
-            messageId,
-            done: false,
-            content: '正在生成摘要...'
-        });
-
         const systemPrompt = `第一步，你是一位阅读教练，以《如何阅读一本书》的方法论为指导。请帮我分析以下文本内容：
 
 1. 首先进行结构分析：找出文章的主要部分，确定作者的核心论点和支持论点。
@@ -105,7 +98,7 @@ export async function summarizeWithOpenAI(tabId, url, title, content, settings) 
                     action: 'summaryStream',
                     messageId,
                     done: true,
-                    content: fullResponse
+                    content: ''
                 });
                 break;
             }
@@ -206,6 +199,77 @@ export async function fetchTranslationWithOpenAI(text, targetLang) {
         console.error('Translation error:', error);
         throw error;
     }
+}
+
+export async function compactConversationWithOpenAI(existingMemory, archivedMessages, settings) {
+    const safeMessages = Array.isArray(archivedMessages)
+        ? archivedMessages.filter((message) => message && typeof message === 'object' && typeof message.content === 'string')
+        : [];
+
+    if (safeMessages.length === 0) {
+        return existingMemory || '';
+    }
+
+    if (!settings) {
+        settings = currentSettings;
+    }
+
+    const apiKey = settings.openaiApiKey;
+    if (!apiKey) {
+        throw new Error('OpenAI API Key is not configured');
+    }
+
+    const baseUrl = getConfiguredOpenAIBaseUrl(settings);
+    const model = settings.openaiCustomModel || settings.openaiModel || DEFAULT_OPENAI_MODEL;
+    const archivedTranscript = safeMessages
+        .map((message) => `${message.role === 'user' ? '用户' : '助手'}: ${message.content}`)
+        .join('\n');
+
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+            model,
+            messages: [
+                {
+                    role: 'system',
+                    content: `你负责维护网页对话的滚动 compact memory。
+
+目标：
+1. 保留用户目标、已确认结论、仍未解决的问题。
+2. 保留对网页内容的重要引用、术语、偏好和约束。
+3. 删除寒暄、重复表述、低价值措辞。
+4. 输出紧凑中文，便于后续对话直接作为 system context 使用。
+
+输出要求：
+- 不要复述全部原文。
+- 不要写“以下是总结”等前言。
+- 使用 4 到 8 条短列表。`
+                },
+                {
+                    role: 'user',
+                    content: `现有 compact memory：
+${existingMemory || '（空）'}
+
+请将以下即将滑出最近上下文窗口的旧对话增量合并进去，并返回新的 compact memory：
+${archivedTranscript}`
+                }
+            ],
+            temperature: 0.2,
+            max_tokens: 600
+        })
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(`OpenAI API error: ${errorData?.error?.message || response.status}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content?.trim() || existingMemory || '';
 }
 
 

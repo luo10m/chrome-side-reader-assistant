@@ -31,6 +31,19 @@ export let currentSettings = normalizeSettings(defaultSettings, defaultSettings)
 export let pageCache = {};
 export let structuredPageCache = {};
 
+function trimMessageList(messages = []) {
+    let list = ensureMessageList(messages);
+    const MAX_MESSAGES_PER_TAB = 50;
+
+    if (list.length > MAX_MESSAGES_PER_TAB) {
+        const system = list.filter(m => m.role === 'system' || m.type === 'summary');
+        const others = list.filter(m => m.role !== 'system' && m.type !== 'summary');
+        list = [...system, ...others.slice(-MAX_MESSAGES_PER_TAB + system.length)];
+    }
+
+    return list;
+}
+
 export function updateCurrentSettingsLocally(settings) {
     currentSettings = normalizeSettings(settings, defaultSettings);
 }
@@ -103,7 +116,7 @@ export function upsertPageCache(tabId, url, title, content) {
 }
 
 export function saveChatHistory(tabId, messages) {
-    chrome.storage.local.set({ ['pageMessages_' + tabId]: messages });
+    chrome.storage.local.set({ ['pageMessages_' + tabId]: trimMessageList(messages) });
 }
 
 export function loadChatHistory(tabId) {
@@ -119,14 +132,80 @@ export async function appendMessage(tabId, msg) {
     if (msg && typeof msg === 'object') {
         list.push(msg);
     }
-    const MAX_MESSAGES_PER_TAB = 50;
-    if (list.length > MAX_MESSAGES_PER_TAB) {
-        const system = list.filter(m => m.role === 'system' || m.type === 'summary');
-        const others = list.filter(m => m.role !== 'system' && m.type !== 'summary');
-        list = [...system, ...others.slice(-MAX_MESSAGES_PER_TAB + system.length)];
-    }
+    list = trimMessageList(list);
     saveChatHistory(tabId, list);
     return list;
+}
+
+export async function replaceChatHistory(tabId, messages) {
+    const nextList = trimMessageList(messages);
+    saveChatHistory(tabId, nextList);
+    return nextList;
+}
+
+export async function clearChatHistory(tabId) {
+    saveChatHistory(tabId, []);
+    return [];
+}
+
+export async function upsertSummaryMessage(tabId, summaryMessage) {
+    let list = ensureMessageList(await loadChatHistory(tabId));
+    const nextSummaryMessage = {
+        role: 'assistant',
+        type: 'summary',
+        ...summaryMessage
+    };
+    const summaryIndex = list.findIndex((message) => message.role === 'assistant' && message.type === 'summary');
+
+    if (summaryIndex >= 0) {
+        list[summaryIndex] = {
+            ...list[summaryIndex],
+            ...nextSummaryMessage
+        };
+    } else {
+        const systemIndex = list.findIndex((message) => message.role === 'system');
+        if (systemIndex >= 0) {
+            list.splice(systemIndex + 1, 0, nextSummaryMessage);
+        } else {
+            list.unshift(nextSummaryMessage);
+        }
+    }
+
+    list = trimMessageList(list);
+    saveChatHistory(tabId, list);
+    return list;
+}
+
+export function saveCompactMemory(tabId, compactMemory, metadata = {}) {
+    if (!tabId) return Promise.resolve('');
+
+    const nextPageCache = {
+        ...pageCache,
+        [tabId]: {
+            ...pageCache[tabId],
+            compactMemory: compactMemory || '',
+            compactMemoryUpdatedAt: Date.now(),
+            ...metadata
+        }
+    };
+
+    pageCache = nextPageCache;
+
+    return new Promise((resolve) => {
+        chrome.storage.local.set({ pageCache }, () => resolve(nextPageCache[tabId].compactMemory));
+    });
+}
+
+export function loadCompactMemory(tabId) {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['pageCache'], (result) => {
+            if (result.pageCache) {
+                pageCache = result.pageCache;
+            }
+
+            resolve(pageCache?.[tabId]?.compactMemory || '');
+        });
+    });
 }
 
 export function cacheHistory(url, title, pageText, summaryText) {

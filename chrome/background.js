@@ -2,14 +2,17 @@ import './services/storage-service.js';
 import { 
     currentSettings, loadSettings, updateCurrentSettingsLocally,
     upsertPageCache, pageCache, structuredPageCache, updateStructuredPageCache,
-    loadChatHistory, saveChatHistory, appendMessage 
+    loadChatHistory, saveChatHistory, appendMessage,
+    replaceChatHistory, clearChatHistory, upsertSummaryMessage,
+    loadCompactMemory, saveCompactMemory
 } from './services/storage-service.js';
-import { summarizeWithOpenAI, fetchTranslationWithOpenAI } from './services/llm-provider.js';
+import { summarizeWithOpenAI, fetchTranslationWithOpenAI, compactConversationWithOpenAI } from './services/llm-provider.js';
 import {
     CONTENT_SCRIPT_RECOVERY_FILES,
     isInjectableTabUrl,
     isRecoverableConnectionError
 } from '../src/js/shared/content-script-recovery.mjs';
+import { getMessagesForCompactMemory } from '../src/js/shared/chat-context.mjs';
 
 import { badgeManager, notificationManager } from './services/ui-managers.js';
 
@@ -150,6 +153,11 @@ async function handlePageContent(request, sender, sendResponse) {
                     ts: Date.now()
                 }
             ]);
+            await saveCompactMemory(tabId, '', { compactMemorySourceCount: 0 });
+            cacheData.summary = '';
+            cacheData.summaryTime = null;
+            cacheData.compactMemory = '';
+            cacheData.compactMemoryUpdatedAt = null;
         }
 
         upsertPageCache(tabId, cacheData.url, cacheData.title, cacheData.content);
@@ -191,6 +199,58 @@ async function handlePageContent(request, sender, sendResponse) {
     }
 }
 
+function requestSelectedText(tabId) {
+    return new Promise((resolve) => {
+        try {
+            chrome.tabs.sendMessage(tabId, { action: 'getSelectedText' }, (response) => {
+                const error = chrome.runtime.lastError;
+                if (error) {
+                    resolve({ success: false, error: error.message, text: '' });
+                    return;
+                }
+
+                resolve({
+                    success: true,
+                    text: typeof response?.text === 'string' ? response.text : ''
+                });
+            });
+        } catch (error) {
+            resolve({ success: false, error: error.message || String(error), text: '' });
+        }
+    });
+}
+
+async function updateCompactMemoryForTab(tabId) {
+    const history = await loadChatHistory(tabId);
+    const archivedMessages = getMessagesForCompactMemory(history);
+    const archivedCount = archivedMessages.length;
+    const existingCompactedCount = pageCache?.[tabId]?.compactMemorySourceCount || 0;
+
+    if (archivedCount === 0) {
+        await saveCompactMemory(tabId, '', { compactMemorySourceCount: 0 });
+        return { success: true, compactMemory: '' };
+    }
+
+    const settings = await loadSettings();
+    if (!settings.openaiApiKey) {
+        return { success: false, error: 'OpenAI API key is not configured', compactMemory: '' };
+    }
+
+    const existingMemory = await loadCompactMemory(tabId);
+    const messagesToCompact = archivedCount > existingCompactedCount
+        ? archivedMessages.slice(existingCompactedCount)
+        : [];
+
+    if (messagesToCompact.length === 0) {
+        return { success: true, compactMemory: existingMemory };
+    }
+
+    const compactMemory = await compactConversationWithOpenAI(existingMemory, messagesToCompact, settings);
+    await saveCompactMemory(tabId, compactMemory, { compactMemorySourceCount: archivedCount });
+
+    return { success: true, compactMemory };
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'getChatHistory') {
         loadChatHistory(request.tabId).then(list => sendResponse({ success: true, list }));
@@ -198,6 +258,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     else if (request.action === 'appendChatMessage') {
         appendMessage(request.tabId, request.message).then(list => sendResponse({ success: true, list }));
+        return true;
+    }
+    else if (request.action === 'replaceChatHistory') {
+        replaceChatHistory(request.tabId, request.messages).then((list) => sendResponse({ success: true, list }));
+        return true;
+    }
+    else if (request.action === 'clearChatHistory') {
+        clearChatHistory(request.tabId)
+            .then(async (list) => {
+                await saveCompactMemory(request.tabId, '', { compactMemorySourceCount: 0 });
+                sendResponse({ success: true, list });
+            });
+        return true;
+    }
+    else if (request.action === 'upsertSummaryMessage') {
+        upsertSummaryMessage(request.tabId, request.summaryMessage).then((list) => sendResponse({ success: true, list }));
         return true;
     }
     else if (request.action === 'getPageContext') {
@@ -218,9 +294,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 title: tabInfo.title || '',
                 url: tabInfo.url || '',
                 content: tabInfo.content || '',
-                summary: tabInfo.summary || ''
+                summary: tabInfo.summary || '',
+                compactMemory: tabInfo.compactMemory || ''
             });
         });
+        return true;
+    }
+    else if (request.action === 'getCompactMemory') {
+        loadCompactMemory(request.tabId).then((compactMemory) => sendResponse({ success: true, compactMemory }));
+        return true;
+    }
+    else if (request.action === 'updateCompactMemory') {
+        updateCompactMemoryForTab(request.tabId)
+            .then((result) => sendResponse(result))
+            .catch((error) => sendResponse({ success: false, error: error.message || String(error), compactMemory: '' }));
+        return true;
+    }
+    else if (request.action === 'getSelectedPageText') {
+        requestSelectedText(request.tabId)
+            .then((result) => sendResponse({ success: result.success, text: result.text || '', error: result.error }))
+            .catch((error) => sendResponse({ success: false, text: '', error: error.message || String(error) }));
         return true;
     }
     else if (request.action === 'pageStructured') {

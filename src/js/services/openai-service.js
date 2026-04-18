@@ -19,6 +19,28 @@ function normalizeApiBaseUrl(baseUrl) {
     return `${normalized}/chat/completions`;
 }
 
+function normalizePreparedMessages(message, history, systemPrompt) {
+    if (!Array.isArray(history) || history.length === 0) {
+        return null;
+    }
+
+    const hasSystemInHistory = history.some((entry) => entry?.role === 'system');
+    const lastMessage = history[history.length - 1];
+    const matchesCurrentUserTurn = lastMessage?.role === 'user'
+        && typeof lastMessage?.content === 'string'
+        && lastMessage.content === message;
+
+    if (!hasSystemInHistory && !matchesCurrentUserTurn) {
+        return null;
+    }
+
+    if (systemPrompt) {
+        return null;
+    }
+
+    return history.filter((entry) => entry && typeof entry === 'object' && typeof entry.role === 'string' && typeof entry.content === 'string');
+}
+
 // Send message to OpenAI
 export async function sendMessageToOpenAI(message, history = [], systemPrompt = null, callback = null) {
     try {
@@ -44,28 +66,31 @@ export async function sendMessageToOpenAI(message, history = [], systemPrompt = 
         console.debug('Using OpenAI model:', model);
         
         // Prepare messages
-        const messages = [];
+        const preparedMessages = normalizePreparedMessages(message, history, systemPrompt);
+        const messages = preparedMessages || [];
         
-        // Add system prompt if provided
-        if (systemPrompt) {
+        if (!preparedMessages) {
+            // Add system prompt if provided
+            if (systemPrompt) {
+                messages.push({
+                    role: 'system',
+                    content: systemPrompt
+                });
+            }
+            
+            // Add chat history
+            if (history && history.length > 0) {
+                // Filter out system messages from history as we've already added the system prompt
+                const filteredHistory = history.filter(msg => msg.role !== 'system');
+                messages.push(...filteredHistory);
+            }
+            
+            // Add current message
             messages.push({
-                role: 'system',
-                content: systemPrompt
+                role: 'user',
+                content: message
             });
         }
-        
-        // Add chat history
-        if (history && history.length > 0) {
-            // Filter out system messages from history as we've already added the system prompt
-            const filteredHistory = history.filter(msg => msg.role !== 'system');
-            messages.push(...filteredHistory);
-        }
-        
-        // Add current message
-        messages.push({
-            role: 'user',
-            content: message
-        });
         
         console.debug('Sending messages to OpenAI:', messages);
         

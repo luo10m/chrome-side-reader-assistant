@@ -1,21 +1,23 @@
 // Import the API service and markdown renderer
 import { getSettings, getActiveSystemPrompt } from '../config/settings.js';
-import { sendMessageToOpenAI, parseOpenAIStreamingResponse } from '../services/openai-service.js';
+import { sendMessageToOpenAI } from '../services/openai-service.js';
 import { renderMarkdown } from '../utils/markdown-renderer.js';
 import { getRichMediaRenderer } from '../renderers/twitter-renderer.js';
 import { t } from '../utils/i18n.js';
 import { safeSendMessage } from '../utils/message-client.js';
-import { MAX_MESSAGES_PER_TAB, MAX_HISTORY_IN_CONTEXT } from '../constants.js';
+import { MAX_HISTORY_IN_CONTEXT } from '../constants.js';
 import { ensureMessageList } from '../shared/runtime-guards.mjs';
 import { DEFAULT_OPENAI_MODEL } from '../shared/openai-defaults.mjs';
+import {
+    buildChatRequestMessages,
+    buildSelectionPreview,
+    getRenderableConversationMessages
+} from '../shared/chat-context.mjs';
 
 // Load AI Chat
 export function loadAIChat(container) {
     // Chat history
     let chatHistory = [];
-
-    // Current chat ID
-    let currentChatId = null;
 
     // 添加当前标签页跟踪
     let currentTabId = null;
@@ -24,6 +26,7 @@ export function loadAIChat(container) {
     let currentSummaryMessageId = null; // 当前摘要消息的ID
     let summaryContentElement = null; // 摘要内容元素
     let streamingMessageElement = null; // 用于流式响应的消息元素
+    let currentSelectionText = '';
 
     // Create chat UI with redesigned layout
     container.innerHTML = `
@@ -46,6 +49,11 @@ export function loadAIChat(container) {
                     <button id="history-button" class="action-button" data-i18n-title="chat.history" title="Chat History">
                         <img src="assets/svg/history.svg" alt="History" class="button-icon">
                     </button>
+                </div>
+                <div id="selection-chip" class="selection-chip" hidden>
+                    <span class="selection-chip-icon" aria-hidden="true">↳</span>
+                    <span id="selection-chip-text" class="selection-chip-text"></span>
+                    <button id="clear-selection-chip" class="selection-chip-clear" type="button" aria-label="Clear selected text">×</button>
                 </div>
                 <div class="chat-input-container">
                     <textarea id="chat-input" data-i18n-placeholder="chat.placeholder" placeholder="Type your message..." rows="1" style="height: auto;"></textarea>
@@ -83,6 +91,9 @@ export function loadAIChat(container) {
     const historyPopup = document.getElementById('history-popup');
     const closeHistoryButton = document.getElementById('close-history');
     const historyList = document.getElementById('history-list');
+    const selectionChip = document.getElementById('selection-chip');
+    const selectionChipText = document.getElementById('selection-chip-text');
+    const clearSelectionChipButton = document.getElementById('clear-selection-chip');
 
     // 新增：摘要相关元素
     const pageInfoContainer = document.getElementById('page-info');
@@ -322,48 +333,17 @@ export function loadAIChat(container) {
 
             // 添加或更新摘要消息到聊天历史
             if (currentTabId) {
-                // 读取现有消息
-                chrome.storage.local.get(['pageMessages_' + currentTabId], (result) => {
-                    let messages = result['pageMessages_' + currentTabId] || [];
-
-                    // 查找现有摘要消息
-                    const summaryIndex = messages.findIndex(m => m.role === 'assistant' && m.type === 'summary');
-
-                    if (summaryIndex >= 0) {
-                        // 更新现有摘要
-                        messages[summaryIndex].content = summaryText;
-                    } else {
-                        // 添加新摘要（在系统消息之后，如果有的话）
-                        const systemIndex = messages.findIndex(m => m.role === 'system');
-
-                        // 创建摘要消息对象
-                        const summaryMessage = {
-                            role: 'assistant',
-                            content: summaryText,
-                            type: 'summary'
-                        };
-
-                        if (systemIndex >= 0) {
-                            // 插入系统消息之后
-                            messages.splice(systemIndex + 1, 0, summaryMessage);
-                        } else if (messages.length > 0) {
-                            // 插入到开头
-                            messages.unshift(summaryMessage);
-                        } else {
-                            // 空消息列表，添加系统消息和摘要
-                            messages = [
-                                { role: 'system', content: 'You are a helpful assistant.' },
-                                summaryMessage
-                            ];
-                        }
+                safeSendMessage({
+                    action: 'upsertSummaryMessage',
+                    tabId: currentTabId,
+                    summaryMessage: {
+                        role: 'assistant',
+                        content: summaryText,
+                        type: 'summary',
+                        ts: Date.now()
                     }
-
-                    // 保存更新后的消息列表
-                    chrome.storage.local.set({
-                        ['pageMessages_' + currentTabId]: messages
-                    }, () => {
-                        console.log('摘要已保存到标签页:', currentTabId);
-                    });
+                }).then((response) => {
+                    chatHistory = ensureMessageList(response?.list).filter((message) => message.role !== 'system');
                 });
             }
         } else {
@@ -426,6 +406,85 @@ export function loadAIChat(container) {
         }).catch(err => {
             console.error('Failed to copy text: ', err);
         });
+    }
+
+    function setSelectionText(selectionText) {
+        currentSelectionText = typeof selectionText === 'string' ? selectionText.trim() : '';
+        const preview = buildSelectionPreview(currentSelectionText);
+
+        if (!preview) {
+            selectionChip.hidden = true;
+            selectionChipText.textContent = '';
+            return;
+        }
+
+        selectionChip.hidden = false;
+        selectionChipText.textContent = preview;
+    }
+
+    function clearSelectionText() {
+        setSelectionText('');
+    }
+
+    async function refreshSelectedPageText() {
+        if (!currentTabId) {
+            clearSelectionText();
+            return '';
+        }
+
+        const response = await safeSendMessage({
+            action: 'getSelectedPageText',
+            tabId: currentTabId
+        });
+
+        const nextSelection = response?.success ? response.text || '' : '';
+        setSelectionText(nextSelection);
+        return nextSelection;
+    }
+
+    function renderHistoryList(messages) {
+        historyList.innerHTML = '';
+        const renderableMessages = getRenderableConversationMessages(messages);
+
+        if (renderableMessages.length === 0) {
+            historyList.innerHTML = `<div class="no-history">${t('chat.noHistory', 'No history yet')}</div>`;
+            return;
+        }
+
+        renderableMessages.forEach((message) => {
+            const item = document.createElement('div');
+            item.className = 'history-item';
+
+            const role = document.createElement('div');
+            role.className = 'history-item-role';
+            role.textContent = message.type === 'summary'
+                ? '摘要'
+                : (message.role === 'user' ? '你' : '助手');
+
+            const content = document.createElement('div');
+            content.className = 'history-item-content';
+            content.textContent = buildSelectionPreview(message.content || '', 80);
+
+            item.appendChild(role);
+            item.appendChild(content);
+            historyList.appendChild(item);
+        });
+    }
+
+    async function openHistoryPopup() {
+        if (!currentTabId) return;
+
+        const historyResponse = await safeSendMessage({
+            action: 'getChatHistory',
+            tabId: currentTabId
+        });
+        const messages = ensureMessageList(historyResponse?.list);
+        renderHistoryList(messages);
+        historyPopup.classList.add('show');
+    }
+
+    function closeHistoryPopup() {
+        historyPopup.classList.remove('show');
     }
 
     // 新增：自动调整文本区域高度
@@ -544,6 +603,8 @@ export function loadAIChat(container) {
         try {
             // 获取当前标签页ID
             const [{ id: tabId }] = await chrome.tabs.query({ active: true, currentWindow: true });
+            currentTabId = tabId;
+            const selectionText = await refreshSelectedPageText();
             
             // 1. 写入user消息到历史
             await safeSendMessage({
@@ -573,6 +634,16 @@ export function loadAIChat(container) {
                 tabId
             });
             const ctx = ctxResponse && ctxResponse.success !== false ? ctxResponse : null;
+            const compactMemoryResponse = await safeSendMessage({
+                action: 'getCompactMemory',
+                tabId
+            });
+            const compactMemory = compactMemoryResponse?.success ? compactMemoryResponse.compactMemory || '' : '';
+            const historyWithoutCurrentTurn = [...list];
+            const latestMessage = historyWithoutCurrentTurn[historyWithoutCurrentTurn.length - 1];
+            if (latestMessage?.role === 'user' && latestMessage?.content === userMessage) {
+                historyWithoutCurrentTurn.pop();
+            }
             
             // 获取当前活动的系统提示词
             const systemPrompt = await getActiveSystemPrompt();
@@ -581,17 +652,15 @@ export function loadAIChat(container) {
             const settings = await getSettings();
             
             // 4. 组装发送给模型的messages
-            // 使用从constants.js导入的MAX_HISTORY_IN_CONTEXT
-            const summaryMsg = ctx && ctx.summary
-                ? { role: 'system', content: `以下是当前页面摘要，供回答参考：\n${ctx.summary}` }
-                : null;
-            
-            const tail = list.filter(m => m.role !== 'system').slice(-MAX_HISTORY_IN_CONTEXT);
-            const messages = [
-                { role: 'system', content: systemPrompt },
-                summaryMsg,
-                ...tail
-            ].filter(Boolean); // 过滤掉null值
+            const messages = buildChatRequestMessages({
+                systemPrompt,
+                pageSummary: ctx?.summary || '',
+                compactMemory,
+                history: historyWithoutCurrentTurn,
+                userMessage,
+                selectionText,
+                maxHistoryInContext: MAX_HISTORY_IN_CONTEXT
+            });
             
             // 创建流式显示的消息元素
             streamingMessageElement = document.createElement('div');
@@ -621,15 +690,17 @@ export function loadAIChat(container) {
             }
             
             // 使用OpenAI
-            response = await sendMessageToOpenAI(userMessage, messages, systemPrompt);
+            response = await sendMessageToOpenAI(userMessage, messages, null);
             
             // 处理OpenAI的流式响应
             if (response.streaming) {
-                await handleStreamingResponse(response.reader, response.decoder, updateStreamingMessage, userMessage);
+                await handleStreamingResponse(response.reader, response.decoder, updateStreamingMessage, tabId);
                 return; // 流式响应会自行处理UI更新
             }
             
-            // 6. 流式结束后，写入assistant消息
+            fullText = response.fullResponse || '';
+            contentElement.innerHTML = renderMarkdown(fullText);
+
             if (fullText) {
                 await safeSendMessage({
                     action: 'appendChatMessage',
@@ -641,7 +712,12 @@ export function loadAIChat(container) {
                         ts: Date.now()
                     }
                 });
+                await safeSendMessage({
+                    action: 'updateCompactMemory',
+                    tabId
+                });
             }
+            clearSelectionText();
         } catch (error) {
             console.error('发送消息错误:', error);
             
@@ -661,7 +737,7 @@ export function loadAIChat(container) {
     }
 
     // 处理流式响应
-    async function handleStreamingResponse(reader, decoder, callback, userMessage) {
+    async function handleStreamingResponse(reader, decoder, callback, tabId) {
         let fullText = '';
         
         try {
@@ -694,11 +770,25 @@ export function loadAIChat(container) {
             // 完成处理
             callback('', fullText, true);
             
-            // 添加到聊天历史
-            chatHistory.push({ role: 'user', content: userMessage });
-            chatHistory.push({ role: 'assistant', content: fullText });
-            saveChatHistory(chatHistory);
-            
+            if (fullText) {
+                const appendResponse = await safeSendMessage({
+                    action: 'appendChatMessage',
+                    tabId,
+                    message: {
+                        id: Date.now(),
+                        role: 'assistant',
+                        content: fullText,
+                        ts: Date.now()
+                    }
+                });
+                chatHistory = ensureMessageList(appendResponse?.list).filter((message) => message.role !== 'system');
+                await safeSendMessage({
+                    action: 'updateCompactMemory',
+                    tabId
+                });
+            }
+            clearSelectionText();
+             
         } catch (error) {
             console.error('Error reading stream:', error);
             const errorElement = streamingMessageElement?.querySelector('.message-content');
@@ -764,7 +854,8 @@ export function loadAIChat(container) {
     }
 
     // 修复：加载当前标签页的聊天历史 - 正确处理复杂的消息对象
-    function loadChatHistory(tabId) {
+    async function loadChatHistory(tabId, options = {}) {
+        const { force = false } = options;
         // 显示加载状态
         const loadingElement = document.createElement('div');
         loadingElement.className = 'chat-loading';
@@ -774,65 +865,48 @@ export function loadAIChat(container) {
 
         console.log('加载标签页的聊天历史:', tabId);
 
-        // 从存储中获取该标签页的消息历史
-        chrome.storage.local.get(['pageMessages_' + tabId], (result) => {
-            // 清空当前显示的消息
-            chatMessages.innerHTML = '';
+        const [settings, response] = await Promise.all([
+            getSettings(),
+            safeSendMessage({
+                action: 'getChatHistory',
+                tabId
+            })
+        ]);
 
-            const messages = ensureMessageList(result['pageMessages_' + tabId]);
-            console.log('获取到消息历史:', messages);
+        // 清空当前显示的消息
+        chatMessages.innerHTML = '';
 
-            // 更新本地聊天历史 - 保留所有消息包括摘要
-            chatHistory = messages.filter(msg => msg.role !== 'system');
+        const messages = ensureMessageList(response?.list);
+        console.log('获取到消息历史:', messages);
+        chatHistory = messages.filter(msg => msg.role !== 'system');
+        renderHistoryList(messages);
 
-            // 如果没有历史消息，显示默认欢迎消息
-            if (messages.length === 0) {
-                addWelcomeMessage();
-                return;
+        if (!force && settings.loadLastChat === false) {
+            addWelcomeMessage();
+            return;
+        }
+
+        // 如果没有历史消息，显示默认欢迎消息
+        if (messages.length === 0) {
+            addWelcomeMessage();
+            return;
+        }
+
+        messages.forEach(msg => {
+            if (msg.role !== 'system') {
+                addMessageToUI(msg.role, msg.content, msg.type);
             }
-
-            // 渲染历史消息，传递type参数以正确显示摘要
-            let summaryAdded = false;
-            messages.forEach(msg => {
-                if (msg.role !== 'system') {
-                    // 如果是摘要类型，标记已添加摘要
-                    if (msg.type === 'summary') {
-                        summaryAdded = true;
-                    }
-                    addMessageToUI(msg.role, msg.content, msg.type);
-                }
-            });
-        });
-    }
-
-    // 新增：保存聊天记录到当前标签页
-    function saveChatHistory(messages) {
-        if (!currentTabId) return;
-
-        // 检查是否有系统消息
-        const hasSystemMessage = messages.some(msg => msg.role === 'system');
-
-        // 如果没有系统消息，添加一个默认的
-        const messagesWithSystem = hasSystemMessage ? messages : [
-            { role: 'system', content: 'You are a helpful assistant.' },
-            ...messages
-        ];
-
-        // 保存到特定标签页的消息历史
-        chrome.storage.local.set({
-            ['pageMessages_' + currentTabId]: messagesWithSystem
-        }, () => {
-            console.log('聊天记录已保存到标签页:', currentTabId);
         });
     }
 
     // 新增：初始化标签页关联
-    function initCurrentTab() {
+    async function initCurrentTab() {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs && tabs.length > 0) {
                 currentTabId = tabs[0].id;
                 console.log('当前标签页ID:', currentTabId);
                 loadChatHistory(currentTabId);
+                refreshSelectedPageText();
             }
         });
     }
@@ -873,6 +947,8 @@ export function loadAIChat(container) {
 
                     // 重新加载该标签页的聊天历史，后台已清理旧帖子会话
                     loadChatHistory(currentTabId);
+                    clearSelectionText();
+                    closeHistoryPopup();
                 }, 100);
             }
         }
@@ -883,6 +959,15 @@ export function loadAIChat(container) {
 
     // 新增：绑定发送按钮事件
     sendButton.addEventListener('click', handleSend);
+    historyButton.addEventListener('click', openHistoryPopup);
+    closeHistoryButton.addEventListener('click', closeHistoryPopup);
+    clearSelectionChipButton.addEventListener('click', clearSelectionText);
+    chatInput.addEventListener('focus', () => {
+        refreshSelectedPageText();
+    });
+    window.addEventListener('focus', () => {
+        refreshSelectedPageText();
+    });
 
     // 新增：绑定输入框回车事件
     chatInput.addEventListener('keydown', (e) => {
@@ -900,6 +985,7 @@ export function loadAIChat(container) {
         currentTabId = activeInfo.tabId;
         console.log('标签页切换至:', currentTabId);
         loadChatHistory(currentTabId);
+        refreshSelectedPageText();
 
         // 更新摘要按钮状态
         setTimeout(initSummaryButton, 300);
@@ -911,23 +997,30 @@ export function loadAIChat(container) {
             setTimeout(() => {
                 initSummaryButton();
                 loadChatHistory(currentTabId);
+                refreshSelectedPageText();
             }, 300);
         }
     });
 
     // 新增：绑定新对话按钮事件 - 清空当前标签页历史
-    newChatButton.addEventListener('click', () => {
+    newChatButton.addEventListener('click', async () => {
         if (!currentTabId) return;
 
         // 确认是否清空当前对话
         if (confirm(t('chat.confirmNewChat', '确定要开始新对话吗？这将清空当前页面的所有消息。'))) {
             // 清空聊天历史
             chatHistory = [];
-            saveChatHistory(chatHistory);
+            await safeSendMessage({
+                action: 'clearChatHistory',
+                tabId: currentTabId
+            });
+            clearSelectionText();
+            closeHistoryPopup();
 
             // 清空UI
             chatMessages.innerHTML = '';
             addWelcomeMessage();
+            renderHistoryList([]);
         }
     });
 

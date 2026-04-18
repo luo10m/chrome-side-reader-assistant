@@ -200,6 +200,53 @@
     margin-bottom: 2px;
 }
 
+.selection-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 2px 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+.selection-chip[hidden] {
+    display: none !important;
+}
+
+.selection-chip-icon {
+    color: var(--primary-color);
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.selection-chip-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.selection-chip-clear {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0;
+}
+
+.selection-chip-clear:hover {
+    color: var(--text-color);
+}
+
 .action-button {
     display: flex;
     align-items: center;
@@ -829,15 +876,29 @@ code {
 .history-item {
     padding: 12px 15px;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
+    flex-direction: column;
+    gap: 4px;
     transition: background-color 0.2s;
     border-bottom: 1px solid var(--border-color-light);
 }
 
 .history-item:hover {
     background-color: var(--hover-color);
+}
+
+.history-item-role {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.history-item-content {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .history-item.active {

@@ -517,16 +517,6 @@ function setupPageMonitors() {
         subtree: true
     });
     
-    // 在页面卸载时清理
-    window.addEventListener('unload', () => {
-        history.pushState = originalPushState;
-        history.replaceState = originalReplaceState;
-        window.removeEventListener('popstate', popstateHandler);
-        observer.disconnect();
-        if (mutationTimer) {
-            clearTimeout(mutationTimer);
-        }
-    });
 }
 
 // 页面加载完成后执行内容提取
@@ -543,6 +533,14 @@ if (document.readyState === 'loading') {
 // 监听来自侧边栏的消息，处理手动刷新内容的请求
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     try {
+        if (request.action === 'getSelectedText') {
+            sendResponse({
+                success: true,
+                text: window.getSelection().toString()
+            });
+            return true;
+        }
+
         if (request.action === 'extractPageContent') {
             // 检查扩展上下文是否有效
             if (!isExtensionContextValid()) {
