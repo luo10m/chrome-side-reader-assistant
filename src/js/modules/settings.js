@@ -4,6 +4,7 @@ import { normalizeSettings } from '../shared/runtime-guards.mjs';
 import {
     DEFAULT_OPENAI_BASE_URL,
     DEFAULT_OPENAI_MODEL,
+    OPENAI_BASE_URL_PLACEHOLDER,
     getDefaultOpenAIModels
 } from '../shared/openai-defaults.mjs';
 
@@ -107,7 +108,7 @@ export async function loadSettings(container) {
                         <div class="settings-item">
                             <label for="openai-base-url" data-i18n="settings.sections.openai.baseUrl.label">Base URL (Optional)</label>
                             <div class="settings-control">
-                                <input type="text" id="openai-base-url" placeholder="${DEFAULT_OPENAI_BASE_URL}" value="${settings.openaiBaseUrl || ''}">
+                                <input type="text" id="openai-base-url" placeholder="${OPENAI_BASE_URL_PLACEHOLDER}" value="${settings.openaiBaseUrl || ''}">
                             </div>
                         </div>
                         

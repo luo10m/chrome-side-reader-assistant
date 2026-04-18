@@ -1,12 +1,20 @@
 import { currentSettings, defaultSettings, updatePageCacheRecord } from './storage-service.js';
 import { sendRuntimeMessageSafely } from '../../src/js/shared/runtime-guards.mjs';
-import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL } from '../../src/js/shared/openai-defaults.mjs';
+import { DEFAULT_OPENAI_MODEL } from '../../src/js/shared/openai-defaults.mjs';
 
 function dispatchRuntimeMessage(payload) {
     return sendRuntimeMessageSafely(
         chrome.runtime.sendMessage.bind(chrome.runtime),
         payload
     );
+}
+
+function getConfiguredOpenAIBaseUrl(settings) {
+    const baseUrl = (settings?.openaiBaseUrl || '').trim().replace(/\/+$/, '');
+    if (!baseUrl) {
+        throw new Error('OpenAI base URL is not configured');
+    }
+    return baseUrl;
 }
 
 export async function summarizeWithOpenAI(tabId, url, title, content, settings) {
@@ -62,7 +70,7 @@ export async function summarizeWithOpenAI(tabId, url, title, content, settings) 
 {{苏格拉底的提问}}
 `;
 
-        const baseUrl = settings.openaiBaseUrl || DEFAULT_OPENAI_BASE_URL;
+        const baseUrl = getConfiguredOpenAIBaseUrl(settings);
         const model = settings.openaiCustomModel || settings.openaiModel || DEFAULT_OPENAI_MODEL;
 
         const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -158,7 +166,7 @@ export async function fetchTranslationWithOpenAI(text, targetLang) {
         throw new Error('OpenAI API Key is not configured');
     }
     
-    const baseUrl = settings.openaiBaseUrl || DEFAULT_OPENAI_BASE_URL;
+    const baseUrl = getConfiguredOpenAIBaseUrl(settings);
     const model = settings.openaiCustomModel || settings.openaiModel || DEFAULT_OPENAI_MODEL;
     
     const languageMap = {

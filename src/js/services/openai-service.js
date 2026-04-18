@@ -1,13 +1,15 @@
 // OpenAI API Service
 import { getSettings } from '../config/settings.js';
 import {
-    DEFAULT_OPENAI_BASE_URL,
     DEFAULT_OPENAI_MODEL,
     getDefaultOpenAIModels
 } from '../shared/openai-defaults.mjs';
 
 function normalizeApiBaseUrl(baseUrl) {
-    const normalized = (baseUrl || DEFAULT_OPENAI_BASE_URL).trim().replace(/\/+$/, '');
+    const normalized = (baseUrl || '').trim().replace(/\/+$/, '');
+    if (!normalized) {
+        throw new Error('OpenAI base URL is not configured');
+    }
     if (normalized.endsWith('/chat/completions')) {
         return normalized;
     }

@@ -1,4 +1,5 @@
-export const DEFAULT_OPENAI_BASE_URL = 'https://tokenx24.com/v1';
+export const DEFAULT_OPENAI_BASE_URL = '';
+export const OPENAI_BASE_URL_PLACEHOLDER = 'https://tokenx24.com/v1';
 export const DEFAULT_OPENAI_MODEL = 'gpt-5.4';
 export const DEFAULT_OPENAI_MODELS = [
     { id: 'gpt-5.4', name: 'gpt-5.4' },

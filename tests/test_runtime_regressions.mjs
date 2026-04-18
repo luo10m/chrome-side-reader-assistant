@@ -106,12 +106,14 @@ async function testRecoverableMissingReceiverDetection() {
 async function testOpenAIDefaultsMatchRequestedConfig() {
     const {
         DEFAULT_OPENAI_BASE_URL,
+        OPENAI_BASE_URL_PLACEHOLDER,
         DEFAULT_OPENAI_MODEL,
         DEFAULT_OPENAI_MODELS
     } = await loadOpenAIDefaults();
     const { normalizeSettings } = await loadGuards();
 
-    assert.equal(DEFAULT_OPENAI_BASE_URL, 'https://tokenx24.com/v1');
+    assert.equal(DEFAULT_OPENAI_BASE_URL, '');
+    assert.equal(OPENAI_BASE_URL_PLACEHOLDER, 'https://tokenx24.com/v1');
     assert.equal(DEFAULT_OPENAI_MODEL, 'gpt-5.4');
     assert.deepEqual(
         DEFAULT_OPENAI_MODELS.map((model) => model.id),
@@ -119,7 +121,7 @@ async function testOpenAIDefaultsMatchRequestedConfig() {
     );
 
     const normalized = normalizeSettings({});
-    assert.equal(normalized.openaiBaseUrl, 'https://tokenx24.com/v1');
+    assert.equal(normalized.openaiBaseUrl, '');
     assert.equal(normalized.openaiModel, 'gpt-5.4');
 }
 
@@ -161,6 +163,22 @@ function testSettingsClientUsesStorageAuthority() {
     assert.equal(source.includes('chrome.storage.local.set'), true);
 }
 
+function testOpenAIRequestsDoNotUseSharedBaseUrlFallback() {
+    const backgroundProvider = fs.readFileSync(path.join(repoRoot, 'chrome/services/llm-provider.js'), 'utf8');
+    const sidePanelProvider = fs.readFileSync(path.join(repoRoot, 'src/js/services/openai-service.js'), 'utf8');
+
+    assert.equal(
+        backgroundProvider.includes('settings.openaiBaseUrl || DEFAULT_OPENAI_BASE_URL'),
+        false,
+        'background provider should only use settings.openaiBaseUrl'
+    );
+    assert.equal(
+        sidePanelProvider.includes('baseUrl || DEFAULT_OPENAI_BASE_URL'),
+        false,
+        'side panel provider should not fall back to shared default base URL'
+    );
+}
+
 function testManifestUsesSingleContentExtractionScript() {
     const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'manifest.json'), 'utf8'));
     const contentScripts = manifest.content_scripts?.[0]?.js || [];
@@ -188,6 +206,7 @@ async function run() {
     testBackgroundServiceWorkerAvoidsDynamicImport();
     testManifestAllowsRuntimeRecoveryInjection();
     testSettingsClientUsesStorageAuthority();
+    testOpenAIRequestsDoNotUseSharedBaseUrlFallback();
     testManifestUsesSingleContentExtractionScript();
     testBackgroundUsesSingleSummaryProtocol();
     console.log('runtime regressions: ok');
